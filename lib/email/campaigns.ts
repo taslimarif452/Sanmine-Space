@@ -41,7 +41,7 @@ export async function sendApproval(id: string, userId: string) {
   const rows = await sql`SELECT id, user_id, connection_id, recipient, subject, body, status FROM email_approvals WHERE id=${id} AND user_id=${userId} LIMIT 1`;
   const approval = rows[0] as any;
   if (!approval) throw new Error("Approval not found.");
-  if (approval.status !== "approved" && approval.status !== "sending") throw new Error("This email must be approved before it can be sent.");
+  if (approval.status !== "approved" && approval.status !== "failed" && approval.status !== "sending") throw new Error("This email must be approved before it can be sent.");
   await sql`UPDATE email_approvals SET status='sending', error=NULL, updated_at=NOW() WHERE id=${id} AND user_id=${userId}`;
   try {
     const result = await sendGmailMessage(userId, String(approval.connection_id), { to: String(approval.recipient), subject: String(approval.subject), body: String(approval.body) });
