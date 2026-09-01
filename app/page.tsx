@@ -66,10 +66,7 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: messages,
-        }),
+        body: JSON.stringify({ message: text, history: messages }),
       });
 
       const data = await response.json();
@@ -90,19 +87,15 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen bg-[var(--bg)]">
+    <main className="flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">
       <aside
-        className={`hidden shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] py-4 transition-[width] duration-200 md:flex ${
+        className={`hidden h-screen min-h-0 shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] py-4 transition-[width] duration-200 md:flex ${
           sidebar ? "w-[270px] px-3" : "w-[72px] px-2"
         }`}
       >
-        <div className={`flex items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
+        <div className={`flex shrink-0 items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
           {sidebar ? (
-            <button
-              onClick={newChat}
-              className="flex items-center gap-2.5 text-left"
-              aria-label="New chat"
-            >
+            <button onClick={newChat} className="flex items-center gap-2.5 text-left" aria-label="New chat">
               <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg">
                 <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
               </span>
@@ -110,11 +103,7 @@ export default function Home() {
             </button>
           ) : (
             <div className="group relative h-8 w-8">
-              <img
-                src={BRAND_LOGO}
-                alt="Sanmine Space"
-                className="h-8 w-8 rounded-lg object-cover transition-opacity group-hover:opacity-0"
-              />
+              <img src={BRAND_LOGO} alt="Sanmine Space" className="h-8 w-8 rounded-lg object-cover transition-opacity group-hover:opacity-0" />
               <button
                 onClick={() => setSidebar(true)}
                 className="absolute inset-0 grid h-8 w-8 place-items-center rounded-lg text-[#77746d] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100"
@@ -140,9 +129,7 @@ export default function Home() {
 
         <button
           onClick={newChat}
-          className={`flex items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${
-            sidebar ? "gap-2 px-3" : "justify-center px-0"
-          }`}
+          className={`flex shrink-0 items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${sidebar ? "gap-2 px-3" : "justify-center px-0"}`}
           title={!sidebar ? "New chat" : undefined}
           aria-label="New chat"
         >
@@ -152,16 +139,18 @@ export default function Home() {
 
         {sidebar && (
           <>
-            <div className="mt-7 px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
-            <div className="mt-2 space-y-0.5">
-              {["Lead research ideas", "Website outreach plan", "EdTech prospects"].map((item) => (
-                <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
-                  {item}
-                </button>
-              ))}
+            <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
+              <div className="mt-2 space-y-0.5">
+                {["Lead research ideas", "Website outreach plan", "EdTech prospects", "Small business leads", "Local agency research", "Outreach campaign", "YouTube prospects"].map((item) => (
+                  <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
+                    {item}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-auto rounded-xl border border-[var(--line)] bg-white/60 p-3">
+            <div className="mt-3 shrink-0 rounded-xl border border-[var(--line)] bg-white/60 p-3">
               <div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} /> Agent workspace</div>
               <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">Research and outreach tools will live here as the agent grows.</p>
             </div>
@@ -169,7 +158,7 @@ export default function Home() {
         )}
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] px-4 md:px-7">
           <div className="flex items-center gap-2">
             <button onClick={() => setSidebar(!sidebar)} className="rounded-lg p-2 text-[var(--muted)] hover:bg-black/5 md:hidden" aria-label="Toggle sidebar">
@@ -186,7 +175,7 @@ export default function Home() {
         </header>
 
         {messages.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center px-4 pb-8 pt-[15vh]">
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-4 pb-8 pt-[15vh]">
             <div className="w-full max-w-[760px]">
               <div className="mb-8 text-center">
                 <div className="mx-auto mb-5 grid h-11 w-11 place-items-center overflow-hidden rounded-2xl">
@@ -201,15 +190,13 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="mx-auto w-full max-w-[820px] flex-1 overflow-y-auto px-4 py-10">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto overscroll-contain px-4 py-10">
               <div className="space-y-8">
                 {messages.map((item, index) => (
                   <div key={`${item.role}-${index}`} className={item.role === "user" ? "flex justify-end" : "flex justify-start"}>
                     {item.role === "user" ? (
-                      <div className="max-w-[75%] rounded-2xl bg-[#ebe9e3] px-4 py-3 text-[15px] leading-6 text-[#282721]">
-                        {item.content}
-                      </div>
+                      <div className="max-w-[75%] rounded-2xl bg-[#ebe9e3] px-4 py-3 text-[15px] leading-6 text-[#282721]">{item.content}</div>
                     ) : (
                       <div className="flex max-w-[85%] gap-3 text-[15px] leading-7 text-[#37352f]">
                         <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
@@ -227,7 +214,7 @@ export default function Home() {
                 {error && <ErrorMessage message={error} />}
               </div>
             </div>
-            <div className="mx-auto w-full max-w-[820px] px-4 pb-6 pt-2">
+            <div className="mx-auto w-full max-w-[820px] shrink-0 px-4 pb-6 pt-2">
               <Composer message={message} setMessage={setMessage} submit={submit} loading={loading} />
             </div>
           </div>
@@ -237,17 +224,7 @@ export default function Home() {
   );
 }
 
-function Composer({
-  message,
-  setMessage,
-  submit,
-  loading,
-}: {
-  message: string;
-  setMessage: (value: string) => void;
-  submit: () => void;
-  loading: boolean;
-}) {
+function Composer({ message, setMessage, submit, loading }: { message: string; setMessage: (value: string) => void; submit: () => void; loading: boolean }) {
   return (
     <div className="rounded-[22px] border border-[#dcd9d1] bg-[var(--panel)] p-2 shadow-[0_8px_35px_rgba(30,27,20,0.06)] focus-within:border-[#c8c4ba] focus-within:shadow-[0_10px_40px_rgba(30,27,20,0.09)]">
       <textarea
@@ -273,9 +250,7 @@ function Suggestions({ setMessage }: { setMessage: (value: string) => void }) {
   return (
     <div className="mt-5 flex flex-wrap justify-center gap-2">
       {examples.map((example) => (
-        <button key={example} onClick={() => setMessage(example)} className="rounded-full border border-[var(--line)] bg-white/40 px-3.5 py-2 text-xs text-[#68655e] transition hover:border-[#cbc7bd] hover:bg-white">
-          {example}
-        </button>
+        <button key={example} onClick={() => setMessage(example)} className="rounded-full border border-[var(--line)] bg-white/40 px-3.5 py-2 text-xs text-[#68655e] transition hover:border-[#cbc7bd] hover:bg-white">{example}</button>
       ))}
     </div>
   );
