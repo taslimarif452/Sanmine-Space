@@ -1,4 +1,4 @@
-name: Fix chat menu outside click
+name: Fix chat UI
 
 on:
   push:
@@ -14,19 +14,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Make chat menu close on outside interaction
+      - name: Patch chat UI
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('app/page.tsx')
           s = p.read_text()
-          marker = '/* chat-menu-outside-click-v2 */'
-          if marker not in s:
-              old = 'useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close)},[menu]);/* chat-menu-outside-click */'
-              new = 'useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close,true);document.addEventListener("mousedown",close,true);document.addEventListener("touchstart",close,true);document.addEventListener("click",close,true);return()=>{document.removeEventListener("pointerdown",close,true);document.removeEventListener("mousedown",close,true);document.removeEventListener("touchstart",close,true);document.removeEventListener("click",close,true)}},[menu]);'+marker
-              if old not in s:
-                  raise SystemExit('Expected chat menu outside-click hook was not found')
-              p.write_text(s.replace(old, new, 1))
+          old = '''function Composer({value,setValue,submit,loading}:{value:string;setValue:(v:string)=>void;submit:()=>void;loading:boolean}){return <div className="rounded-[22px] border border-[#dcd9d1] bg-[#fbfaf7] p-2 shadow-sm"><textarea value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void submit()}}} placeholder="Ask Sanmine Space anything..." rows={1} disabled={loading} className="max-h-32 min-h-[48px] w-full resize-none border-0 bg-transparent px-3 py-2.5 text-[15px] leading-6 outline-none"/><div className="flex justify-end px-1 pb-1"><button onClick={()=>void submit()} disabled={!value.trim()||loading} className="grid h-9 w-9 place-items-center rounded-full bg-[#282721] text-white disabled:opacity-30"><ArrowUp size={17}/></button></div></div>}'''
+          new = '''function Composer({value,setValue,submit,loading}:{value:string;setValue:(v:string)=>void;submit:()=>void;loading:boolean}){const ref=useRef<HTMLTextAreaElement>(null);const resize=()=>{const el=ref.current;if(!el)return;el.style.height="auto";const cs=getComputedStyle(el);const line=parseFloat(cs.lineHeight)||24;const pad=(parseFloat(cs.paddingTop)||0)+(parseFloat(cs.paddingBottom)||0);const mobile=window.matchMedia("(max-width: 767px)").matches;const max=line*(mobile?4:8)+pad;el.style.height=`${Math.min(el.scrollHeight,max)}px`;el.style.overflowY=el.scrollHeight>max?"auto":"hidden"};useEffect(()=>{resize()},[value]);return <div className="rounded-[22px] border border-[#dcd9d1] bg-[#fbfaf7] p-2 shadow-sm"><textarea ref={ref} value={value} onChange={e=>{setValue(e.target.value);requestAnimationFrame(resize)}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void submit()}}} placeholder="Ask Sanmine Space anything..." rows={1} disabled={loading} className="min-h-[48px] w-full resize-none overflow-hidden border-0 bg-transparent px-3 py-2.5 text-[15px] leading-6 outline-none"/><div className="flex justify-end px-1 pb-1"><button onClick={()=>void submit()} disabled={!value.trim()||loading} className="grid h-9 w-9 place-items-center rounded-full bg-[#282721] text-white disabled:opacity-30"><ArrowUp size={17}/></button></div></div>}'''
+          if old not in s:
+              raise SystemExit('Composer source was not found; refusing unrelated changes')
+          p.write_text(s.replace(old, new, 1))
           PY
       - name: Commit patch
         run: |
@@ -34,5 +32,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/page.tsx
-          git commit -m 'Close chat actions menu on any outside interaction'
+          git commit -m 'Add responsive composer auto-resize'
           git push
