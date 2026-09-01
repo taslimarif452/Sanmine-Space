@@ -6,6 +6,7 @@ import { hasDatabaseConfig, sql } from "@/lib/db/neon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function getCookie(request: Request, name: string) {
   const value = request.headers.get("cookie")?.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1];
@@ -42,26 +43,51 @@ async function persistChat(user: Awaited<ReturnType<typeof getRequestUser>>, mes
 }
 
 export async function POST(request: Request) {
+  let user: Awaited<ReturnType<typeof getRequestUser>>;
   try {
-    const user = await getRequestUser(request);
+    user = await getRequestUser(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Authentication failed.";
+    return NextResponse.json({ error: message, code: "AUTH_ERROR" }, { status: 401 });
+  }
+
+  try {
     const body = await request.json();
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? (body.history as ChatMessage[]) : [];
     if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
 
-    const result = await runAgent(history, message);
-    const chatId = await persistChat(user, message, result.response, request);
-    const response = NextResponse.json({ ...result, chatId, persistence: chatId ? "saved" : "unavailable" });
-    if (chatId) {
-      response.headers.set("x-chat-id", chatId);
-      response.cookies.set("sanmine_chat_id", chatId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 30 });
-    }
-    return response;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (payload: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+        try {
+          send({ type: "status", status: "thinking" });
+          const result = await runAgent(history, message, (event) => send({ type: "event", event }));
+          const chatId = await persistChat(user, message, result.response, request);
+          send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events, chatId, persistence: chatId ? "saved" : "unavailable" });
+          controller.close();
+        } catch (error) {
+          console.error("Chat stream error:", error);
+          const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
+          const isConfig = /not configured|not_configured|api key|private key|database_url/i.test(messageText);
+          send({ type: "error", error: messageText, code: isConfig ? "CONFIG_ERROR" : "CHAT_ERROR" });
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     console.error("Chat API error:", error);
-    const message = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
-    const isAuth = /authentication|auth|token|credential|unauthorized|missing authentication|firebase/i.test(message);
-    const isConfig = /not configured|not_configured|api key|private key|database_url/i.test(message);
-    return NextResponse.json({ error: message, code: isAuth ? "AUTH_ERROR" : isConfig ? "CONFIG_ERROR" : "CHAT_ERROR" }, { status: isAuth ? 401 : 500 });
+    const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
+    return NextResponse.json({ error: messageText, code: "CHAT_ERROR" }, { status: 500 });
   }
 }
