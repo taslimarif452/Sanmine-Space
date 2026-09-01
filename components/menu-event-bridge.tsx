@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 let installed = false;
 const listenerMap = new WeakMap<Function, Map<string, EventListener>>();
+const actionEvents = new Set(["pointerdown", "mousedown", "touchstart", "click"]);
 
 function isChatActionTarget(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
@@ -17,19 +18,21 @@ function install() {
   if (installed || typeof document === "undefined") return;
   installed = true;
 
-  const add = Document.prototype.addEventListener;
-  const remove = Document.prototype.removeEventListener;
+  const proto = Document.prototype as any;
+  const add = proto.addEventListener;
+  const remove = proto.removeEventListener;
 
-  Document.prototype.addEventListener = function (type, listener, options) {
-    if (this === document && typeof listener === "function" && ["pointerdown", "mousedown", "touchstart", "click"].includes(type)) {
+  proto.addEventListener = function (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+    if (this === document && typeof listener === "function" && actionEvents.has(type)) {
+      const original = listener as Function;
       const wrapped: EventListener = (event) => {
         if (isChatActionTarget(event.target)) return;
-        listener.call(this, event);
+        original.call(this, event);
       };
-      let byType = listenerMap.get(listener);
+      let byType = listenerMap.get(original);
       if (!byType) {
         byType = new Map();
-        listenerMap.set(listener, byType);
+        listenerMap.set(original, byType);
       }
       byType.set(type, wrapped);
       return add.call(this, type, wrapped, options);
@@ -37,8 +40,8 @@ function install() {
     return add.call(this, type, listener, options);
   };
 
-  Document.prototype.removeEventListener = function (type, listener, options) {
-    if (this === document && typeof listener === "function" && ["pointerdown", "mousedown", "touchstart", "click"].includes(type)) {
+  proto.removeEventListener = function (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | EventListenerOptions) {
+    if (this === document && typeof listener === "function" && actionEvents.has(type)) {
       const wrapped = listenerMap.get(listener)?.get(type);
       return remove.call(this, type, wrapped || listener, options);
     }
