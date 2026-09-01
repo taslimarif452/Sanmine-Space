@@ -13,7 +13,13 @@ function getCookie(request: Request, name: string) {
   return value ? decodeURIComponent(value) : null;
 }
 
-async function persistChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, responseText: string, request: Request) {
+async function persistChat(
+  user: Awaited<ReturnType<typeof getRequestUser>>,
+  message: string,
+  responseText: string,
+  request: Request,
+  requestedChatId?: string | null,
+) {
   if (!hasDatabaseConfig()) return null;
   try {
     await sql`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT, image TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
@@ -23,7 +29,7 @@ async function persistChat(user: Awaited<ReturnType<typeof getRequestUser>>, mes
     await sql`CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at ASC)`;
     await sql`INSERT INTO users (id, email, name, image) VALUES (${user.uid}, ${user.email ?? `${user.uid}@unknown.local`}, ${user.name ?? null}, ${user.picture ?? null}) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, image = EXCLUDED.image, updated_at = NOW()`;
 
-    let chatId = getCookie(request, "sanmine_chat_id");
+    let chatId = requestedChatId || getCookie(request, "sanmine_chat_id");
     if (chatId) {
       const owned = await sql`SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${user.uid}`;
       if (!owned.length) chatId = null;
@@ -55,6 +61,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? (body.history as ChatMessage[]) : [];
+    const requestedChatId = typeof body.chatId === "string" && body.chatId ? body.chatId : null;
     if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
 
     const encoder = new TextEncoder();
@@ -64,7 +71,7 @@ export async function POST(request: Request) {
         try {
           send({ type: "status", status: "thinking" });
           const result = await runAgent(history, message, (event) => send({ type: "event", event }));
-          const chatId = await persistChat(user, message, result.response, request);
+          const chatId = await persistChat(user, message, result.response, request, requestedChatId);
           send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events, chatId, persistence: chatId ? "saved" : "unavailable" });
           controller.close();
         } catch (error) {
