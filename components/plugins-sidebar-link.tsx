@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PlugZap } from "lucide-react";
+import { PlugZap, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -29,10 +29,16 @@ export function PluginsSidebarLink() {
 
   if (!target) return null;
   return createPortal(
-    <Link href="/plugins" onClick={() => { if (window.innerWidth < 768) document.querySelector("[data-sanmine-plugins-link]")?.dispatchEvent(new Event("sanmine-close-drawer")); }} className={`mt-0.5 flex items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${collapsed ? "justify-center" : "gap-2 px-3"}`} aria-label="Plugins">
-      <PlugZap size={17} />
-      {!collapsed && <span>Plugins</span>}
-    </Link>,
+    <div className="mt-0.5 flex flex-col gap-0.5">
+      <Link href="/plugins" className={`flex items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${collapsed ? "justify-center" : "gap-2 px-3"}`} aria-label="Plugins">
+        <PlugZap size={17} />
+        {!collapsed && <span>Plugins</span>}
+      </Link>
+      <Link href="/campaigns" className={`flex items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${collapsed ? "justify-center" : "gap-2 px-3"}`} aria-label="Campaigns">
+        <Send size={17} />
+        {!collapsed && <span>Campaigns</span>}
+      </Link>
+    </div>,
     target
   );
 }
