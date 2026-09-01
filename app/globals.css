@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f6f2;
+  --panel: #fbfaf7;
+  --text: #24231f;
+  --muted: #77746d;
+  --line: #e6e3dc;
+  --accent: #d97757;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #ead8cf; }
+
+@keyframes pulse-soft { 0%,100% { opacity:.45 } 50% { opacity:1 } }
+.animate-pulse-soft { animation: pulse-soft 1.8s ease-in-out infinite; }
