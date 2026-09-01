@@ -4,6 +4,11 @@ import type { ChatMessage } from "@/lib/ai/provider";
 import { getRequestUser } from "@/lib/auth/request-user";
 import { sql } from "@/lib/db/neon";
 
+function getCookie(request: Request, name: string) {
+  const match = request.headers.get("cookie")?.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getRequestUser(request);
@@ -14,8 +19,7 @@ export async function POST(request: Request) {
 
     await sql`INSERT INTO users (id, email, name, image) VALUES (${user.uid}, ${user.email ?? ""}, ${user.name ?? null}, ${user.picture ?? null}) ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`;
 
-    const existingChatId = request.headers.get("x-chat-id");
-    let chatId = existingChatId;
+    let chatId = getCookie(request, "sanmine_chat_id");
     if (chatId) {
       const owned = await sql`SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${user.uid}`;
       if (!owned.length) chatId = null;
@@ -33,6 +37,7 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({ ...result, chatId });
     response.headers.set("x-chat-id", chatId);
+    response.cookies.set("sanmine_chat_id", chatId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 30 });
     return response;
   } catch (error) {
     console.error("Chat API error", error);
