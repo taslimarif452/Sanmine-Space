@@ -10,8 +10,8 @@ export async function POST(request: Request) {
 
     if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
 
-    const response = await runAgent(history, message);
-    return NextResponse.json({ response });
+    const result = await runAgent(history, message);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Chat API error", error);
     return NextResponse.json(
