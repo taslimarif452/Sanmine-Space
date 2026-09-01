@@ -1,15 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ArrowUp,
-  ChevronDown,
-  Menu,
-  Plus,
-  Search,
-  Sparkles,
-  Loader2,
-} from "lucide-react";
+import { ArrowUp, Menu, Plus, Sparkles, Loader2 } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -96,17 +88,21 @@ export default function Home() {
         <div className={`flex shrink-0 items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
           {sidebar ? (
             <button onClick={newChat} className="flex items-center gap-2.5 text-left" aria-label="New chat">
-              <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg">
+              <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-md">
                 <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
               </span>
               <span className="text-[15px] font-semibold tracking-[-0.02em]">Sanmine Space</span>
             </button>
           ) : (
-            <div className="group relative h-8 w-8">
-              <img src={BRAND_LOGO} alt="Sanmine Space" className="h-8 w-8 rounded-lg object-cover transition-opacity group-hover:opacity-0" />
+            <div className="group relative h-7 w-7">
+              <img
+                src={BRAND_LOGO}
+                alt="Sanmine Space"
+                className="h-7 w-7 rounded-md object-cover transition-opacity group-hover:opacity-0"
+              />
               <button
                 onClick={() => setSidebar(true)}
-                className="absolute inset-0 grid h-8 w-8 place-items-center rounded-lg text-[#77746d] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100"
+                className="absolute inset-0 grid h-7 w-7 place-items-center rounded-md text-[#77746d] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100"
                 aria-label="Expand sidebar"
                 title="Expand sidebar"
               >
@@ -138,41 +134,39 @@ export default function Home() {
         </button>
 
         {sidebar && (
-          <>
-            <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
-              <div className="mt-2 space-y-0.5">
-                {["Lead research ideas", "Website outreach plan", "EdTech prospects", "Small business leads", "Local agency research", "Outreach campaign", "YouTube prospects"].map((item) => (
-                  <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
-                    {item}
-                  </button>
-                ))}
-              </div>
+          <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+            <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
+            <div className="mt-2 space-y-0.5">
+              {["Lead research ideas", "Website outreach plan", "EdTech prospects", "Small business leads", "Local agency research", "Outreach campaign", "YouTube prospects"].map((item) => (
+                <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
+                  {item}
+                </button>
+              ))}
             </div>
-
-            <div className="mt-3 shrink-0 rounded-xl border border-[var(--line)] bg-white/60 p-3">
-              <div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} /> Agent workspace</div>
-              <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">Research and outreach tools will live here as the agent grows.</p>
-            </div>
-          </>
+          </div>
         )}
       </aside>
 
-      <section className="flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] px-4 md:px-7">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebar(!sidebar)} className="rounded-lg p-2 text-[var(--muted)] hover:bg-black/5 md:hidden" aria-label="Toggle sidebar">
-              <Menu size={19} />
-            </button>
-            <span className="text-sm font-semibold md:hidden">Sanmine Space</span>
-            <button onClick={newChat} className="hidden items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-[#4d4a44] hover:bg-black/5 md:flex">
-              New chat <ChevronDown size={14} />
-            </button>
-          </div>
-          <button className="rounded-lg p-2 text-[var(--muted)] hover:bg-black/5" aria-label="Search">
-            <Search size={18} />
+      <section className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="absolute right-4 top-4 z-20 md:right-7 md:top-5">
+          <button
+            onClick={newChat}
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-[#4d4a44] transition hover:bg-black/5"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <Plus size={18} strokeWidth={2} />
+            <span className="hidden sm:inline">New chat</span>
           </button>
-        </header>
+        </div>
+
+        <button
+          onClick={() => setSidebar(!sidebar)}
+          className="absolute left-4 top-4 z-20 rounded-lg p-2 text-[var(--muted)] hover:bg-black/5 md:hidden"
+          aria-label="Toggle sidebar"
+        >
+          <Menu size={19} />
+        </button>
 
         {messages.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-4 pb-8 pt-[15vh]">
@@ -191,27 +185,29 @@ export default function Home() {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto overscroll-contain px-4 py-10">
-              <div className="space-y-8">
-                {messages.map((item, index) => (
-                  <div key={`${item.role}-${index}`} className={item.role === "user" ? "flex justify-end" : "flex justify-start"}>
-                    {item.role === "user" ? (
-                      <div className="max-w-[75%] rounded-2xl bg-[#ebe9e3] px-4 py-3 text-[15px] leading-6 text-[#282721]">{item.content}</div>
-                    ) : (
-                      <div className="flex max-w-[85%] gap-3 text-[15px] leading-7 text-[#37352f]">
-                        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
-                        <div className="whitespace-pre-wrap">{item.content}</div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {loading && (
-                  <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
-                    <span className="flex items-center gap-2">Thinking <Loader2 size={14} className="animate-spin" /></span>
-                  </div>
-                )}
-                {error && <ErrorMessage message={error} />}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-10">
+              <div className="mx-auto w-full max-w-[820px]">
+                <div className="space-y-8">
+                  {messages.map((item, index) => (
+                    <div key={`${item.role}-${index}`} className={item.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                      {item.role === "user" ? (
+                        <div className="max-w-[75%] rounded-2xl bg-[#ebe9e3] px-4 py-3 text-[15px] leading-6 text-[#282721]">{item.content}</div>
+                      ) : (
+                        <div className="flex max-w-[85%] gap-3 text-[15px] leading-7 text-[#37352f]">
+                          <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
+                          <div className="whitespace-pre-wrap">{item.content}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {loading && (
+                    <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
+                      <span className="flex items-center gap-2">Thinking <Loader2 size={14} className="animate-spin" /></span>
+                    </div>
+                  )}
+                  {error && <ErrorMessage message={error} />}
+                </div>
               </div>
             </div>
             <div className="mx-auto w-full max-w-[820px] shrink-0 px-4 pb-6 pt-2">
