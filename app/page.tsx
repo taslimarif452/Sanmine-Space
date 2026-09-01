@@ -17,11 +17,34 @@ type Message = {
   content: string;
 };
 
+const BRAND_LOGO =
+  "https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
+
 const examples = [
   "Find 10 small businesses that could use a better website",
   "Research 10 Indian EdTech businesses and prepare outreach",
   "Find promising leads from YouTube and summarize them",
 ];
+
+function SidebarToggleIcon({ direction }: { direction: "open" | "close" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-[18px] w-[18px]"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="4" width="17" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9 4.5V19.5" stroke="currentColor" strokeWidth="1.7" />
+      {direction === "close" ? (
+        <path d="M13 9L16 12L13 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      ) : (
+        <path d="M16 9L13 12L16 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
+  );
+}
 
 export default function Home() {
   const [message, setMessage] = useState("");
@@ -69,37 +92,86 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen bg-[var(--bg)]">
-      {sidebar && (
-        <aside className="hidden w-[270px] shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] px-3 py-4 md:flex">
-          <div className="flex items-center justify-between px-2 pb-5">
-            <button onClick={newChat} className="flex items-center gap-2.5 text-left">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#24231f] text-sm font-semibold text-white">S</div>
-              <span className="text-[15px] font-semibold tracking-[-0.02em]">Sanmine Space</span>
-            </button>
-            <button className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5" aria-label="Settings">
-              <Settings2 size={17} />
-            </button>
-          </div>
+      <aside
+        className={`hidden shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] py-4 transition-[width] duration-200 md:flex ${
+          sidebar ? "w-[270px] px-3" : "w-[72px] px-2"
+        }`}
+      >
+        <div className={`flex items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
+          <button
+            onClick={newChat}
+            className={`group relative flex items-center text-left ${sidebar ? "gap-2.5" : "justify-center"}`}
+            aria-label="New chat"
+            title={!sidebar ? "Sanmine Space" : undefined}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5">
+              <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
+            </span>
+            {sidebar && <span className="text-[15px] font-semibold tracking-[-0.02em]">Sanmine Space</span>}
 
-          <button onClick={newChat} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-black/5">
-            <Plus size={17} /> New chat
+            {!sidebar && (
+              <span className="pointer-events-none absolute left-[42px] top-1/2 hidden -translate-y-1/2 rounded-lg border border-black/10 bg-white p-1 text-[#5f5c55] shadow-sm group-hover:pointer-events-auto group-hover:block">
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSidebar(true);
+                  }}
+                  className="grid h-7 w-7 place-items-center rounded-md hover:bg-black/5"
+                  aria-label="Expand sidebar"
+                >
+                  <SidebarToggleIcon direction="open" />
+                </button>
+              </span>
+            )}
           </button>
 
-          <div className="mt-7 px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
-          <div className="mt-2 space-y-0.5">
-            {["Lead research ideas", "Website outreach plan", "EdTech prospects"].map((item) => (
-              <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
-                {item}
+          {sidebar && (
+            <div className="flex items-center gap-0.5">
+              <button className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5" aria-label="Settings">
+                <Settings2 size={17} />
               </button>
-            ))}
-          </div>
+              <button
+                onClick={() => setSidebar(false)}
+                className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+              >
+                <SidebarToggleIcon direction="close" />
+              </button>
+            </div>
+          )}
+        </div>
 
-          <div className="mt-auto rounded-xl border border-[var(--line)] bg-white/60 p-3">
-            <div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} /> Agent workspace</div>
-            <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">Research and outreach tools will live here as the agent grows.</p>
-          </div>
-        </aside>
-      )}
+        <button
+          onClick={newChat}
+          className={`flex items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${
+            sidebar ? "gap-2 px-3" : "justify-center px-0"
+          }`}
+          title={!sidebar ? "New chat" : undefined}
+          aria-label="New chat"
+        >
+          <Plus size={17} />
+          {sidebar && "New chat"}
+        </button>
+
+        {sidebar && (
+          <>
+            <div className="mt-7 px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div>
+            <div className="mt-2 space-y-0.5">
+              {["Lead research ideas", "Website outreach plan", "EdTech prospects"].map((item) => (
+                <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">
+                  {item}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-auto rounded-xl border border-[var(--line)] bg-white/60 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} /> Agent workspace</div>
+              <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">Research and outreach tools will live here as the agent grows.</p>
+            </div>
+          </>
+        )}
+      </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] px-4 md:px-7">
@@ -121,8 +193,8 @@ export default function Home() {
           <div className="flex flex-1 flex-col items-center px-4 pb-8 pt-[15vh]">
             <div className="w-full max-w-[760px]">
               <div className="mb-8 text-center">
-                <div className="mx-auto mb-5 grid h-11 w-11 place-items-center rounded-2xl bg-[#24231f] text-white shadow-sm">
-                  <Sparkles size={20} />
+                <div className="mx-auto mb-5 grid h-11 w-11 place-items-center overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+                  <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
                 </div>
                 <h1 className="font-serif text-4xl tracking-[-0.035em] text-[#282721] md:text-[46px]">How can I help?</h1>
                 <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-[var(--muted)]">Research leads, build outreach campaigns, and get work done from one simple conversation.</p>
@@ -144,7 +216,7 @@ export default function Home() {
                       </div>
                     ) : (
                       <div className="flex max-w-[85%] gap-3 text-[15px] leading-7 text-[#37352f]">
-                        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#24231f] text-white"><Sparkles size={13} /></div>
+                        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
                         <div className="whitespace-pre-wrap">{item.content}</div>
                       </div>
                     )}
@@ -152,7 +224,7 @@ export default function Home() {
                 ))}
                 {loading && (
                   <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
-                    <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#24231f] text-white"><Sparkles size={13} /></div>
+                    <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
                     <span className="flex items-center gap-2">Thinking <Loader2 size={14} className="animate-spin" /></span>
                   </div>
                 )}
