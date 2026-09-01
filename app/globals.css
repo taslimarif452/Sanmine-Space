@@ -58,10 +58,25 @@ button:disabled { cursor: default; }
   }
 }
 
-/* Mobile drawer: 50–60% viewport width as requested. */
+/* Mobile drawer: 70% viewport width. */
 @media (max-width: 767px) {
   aside {
-    width: 55vw !important;
-    max-width: 60vw !important;
+    width: 70vw !important;
+    max-width: 70vw !important;
   }
+
+  /* The mobile drawer should not show the Sanmine Space brand/header. */
+  aside > div:first-child {
+    display: none !important;
+  }
+
+  /* Hide the Sanmine logo shown beside assistant processing/replies. */
+  section .flex.gap-3 > img {
+    display: none !important;
+  }
+}
+
+/* Assistant message/processing logo is hidden at all viewport sizes. */
+section .flex.gap-3 > img {
+  display: none;
 }
