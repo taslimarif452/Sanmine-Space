@@ -38,11 +38,9 @@ export async function ensureCampaignTables() {
 }
 
 export async function sendApproval(id: string, userId: string) {
-  const rows = await sql`SELECT id, user_id, connection_id, recipient, subject, body, status FROM email_approvals WHERE id=${id} AND user_id=${userId} LIMIT 1`;
-  const approval = rows[0] as any;
-  if (!approval) throw new Error("Approval not found.");
-  if (approval.status !== "approved" && approval.status !== "failed" && approval.status !== "sending") throw new Error("This email must be approved before it can be sent.");
-  await sql`UPDATE email_approvals SET status='sending', error=NULL, updated_at=NOW() WHERE id=${id} AND user_id=${userId}`;
+  const claimed = await sql`UPDATE email_approvals SET status='sending', error=NULL, updated_at=NOW() WHERE id=${id} AND user_id=${userId} AND status IN ('approved','failed') RETURNING id, connection_id, recipient, subject, body`;
+  const approval = claimed[0] as any;
+  if (!approval) throw new Error("This email is already being sent, already sent, or has not been approved.");
   try {
     const result = await sendGmailMessage(userId, String(approval.connection_id), { to: String(approval.recipient), subject: String(approval.subject), body: String(approval.body) });
     await sql`UPDATE email_approvals SET status='sent', sent_at=NOW(), provider_message_id=${result.id || null}, updated_at=NOW() WHERE id=${id} AND user_id=${userId}`;
