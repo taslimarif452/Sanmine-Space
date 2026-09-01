@@ -1,5 +1,5 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type Auth } from "firebase/auth";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -10,7 +10,32 @@ const config = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const app = getApps().length ? getApp() : initializeApp(config);
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-export { signInWithPopup, signOut };
+let app: FirebaseApp | undefined;
+let authInstance: Auth | undefined;
+
+function getFirebaseApp(): FirebaseApp {
+  if (app) return app;
+  if (typeof window === "undefined") throw new Error("Firebase client can only be initialized in the browser.");
+  if (!config.apiKey || !config.authDomain || !config.projectId || !config.appId) {
+    throw new Error("Firebase is not configured. Check the NEXT_PUBLIC_FIREBASE_* environment variables in Vercel.");
+  }
+  app = getApps().length ? getApp() : initializeApp(config);
+  return app;
+}
+
+export function getFirebaseAuth(): Auth {
+  if (!authInstance) authInstance = getAuth(getFirebaseApp());
+  return authInstance;
+}
+
+export function getGoogleProvider() {
+  return new GoogleAuthProvider();
+}
+
+export async function signInWithGoogle() {
+  return signInWithPopup(getFirebaseAuth(), getGoogleProvider());
+}
+
+export async function signOutCurrentUser() {
+  return signOut(getFirebaseAuth());
+}
