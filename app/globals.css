@@ -48,20 +48,42 @@ button:disabled { cursor: default; }
   aside button[aria-label="Expand sidebar"]:hover svg { opacity: 1; }
 }
 
-/* Mobile drawer: 70% viewport width. */
+/* Mobile drawer: keep the navigation readable and consistently aligned. */
 @media (max-width: 767px) {
   aside { width: 70vw !important; max-width: 70vw !important; }
   aside > div:first-child { display: none !important; }
   section .flex.gap-3 > img { display: none !important; }
-  button:has(> svg > path[d="M4 7.5h16M4 16.5h12"]) {
-    width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
-    border-radius: 9999px !important; background: #fff !important; border: 1px solid rgba(36,35,31,.08) !important;
-    box-shadow: 0 1px 3px rgba(36,35,31,.06) !important;
+
+  /* New chat stays a full-width navigation row even when desktop sidebar state is collapsed. */
+  aside > button {
+    width: 100% !important;
+    min-height: 44px !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    font-size: 0 !important;
   }
-  button:has(> svg.lucide-plus) {
-    width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
-    border-radius: 9999px !important; background: #fff !important; border: 1px solid rgba(36,35,31,.08) !important;
-    box-shadow: 0 1px 3px rgba(36,35,31,.06) !important;
+  aside > button::after {
+    content: "New chat";
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  aside [data-sanmine-plugins-link] {
+    width: 100%;
+    margin-top: 2px;
+  }
+  aside [data-sanmine-plugins-link] a {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    justify-content: flex-start;
+    gap: 10px;
   }
 }
 
