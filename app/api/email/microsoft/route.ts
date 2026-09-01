@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const user = await getRequestUser(request);
     const origin = new URL(request.url).origin;
     const state = createOAuthState(user.uid);
-    const response = NextResponse.redirect(microsoftAuthorizationUrl(state, origin));
+    const response = NextResponse.json({ url: microsoftAuthorizationUrl(state, origin) });
     response.cookies.set("sanmine_microsoft_oauth_state", state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/" });
     return response;
   } catch (error) {
