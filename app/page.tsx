@@ -7,7 +7,6 @@ import {
   Menu,
   Plus,
   Search,
-  Settings2,
   Sparkles,
   Loader2,
 } from "lucide-react";
@@ -98,47 +97,44 @@ export default function Home() {
         }`}
       >
         <div className={`flex items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
-          <button
-            onClick={newChat}
-            className={`group relative flex items-center text-left ${sidebar ? "gap-2.5" : "justify-center"}`}
-            aria-label="New chat"
-            title={!sidebar ? "Sanmine Space" : undefined}
-          >
-            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5">
-              <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
-            </span>
-            {sidebar && <span className="text-[15px] font-semibold tracking-[-0.02em]">Sanmine Space</span>}
-
-            {!sidebar && (
-              <span className="pointer-events-none absolute left-[42px] top-1/2 hidden -translate-y-1/2 rounded-lg border border-black/10 bg-white p-1 text-[#5f5c55] shadow-sm group-hover:pointer-events-auto group-hover:block">
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSidebar(true);
-                  }}
-                  className="grid h-7 w-7 place-items-center rounded-md hover:bg-black/5"
-                  aria-label="Expand sidebar"
-                >
-                  <SidebarToggleIcon direction="open" />
-                </button>
+          {sidebar ? (
+            <button
+              onClick={newChat}
+              className="flex items-center gap-2.5 text-left"
+              aria-label="New chat"
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg">
+                <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
               </span>
-            )}
-          </button>
-
-          {sidebar && (
-            <div className="flex items-center gap-0.5">
-              <button className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5" aria-label="Settings">
-                <Settings2 size={17} />
-              </button>
+              <span className="text-[15px] font-semibold tracking-[-0.02em]">Sanmine Space</span>
+            </button>
+          ) : (
+            <div className="group relative h-8 w-8">
+              <img
+                src={BRAND_LOGO}
+                alt="Sanmine Space"
+                className="h-8 w-8 rounded-lg object-cover transition-opacity group-hover:opacity-0"
+              />
               <button
-                onClick={() => setSidebar(false)}
-                className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5"
-                aria-label="Collapse sidebar"
-                title="Collapse sidebar"
+                onClick={() => setSidebar(true)}
+                className="absolute inset-0 grid h-8 w-8 place-items-center rounded-lg text-[#77746d] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100"
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
               >
-                <SidebarToggleIcon direction="close" />
+                <SidebarToggleIcon direction="open" />
               </button>
             </div>
+          )}
+
+          {sidebar && (
+            <button
+              onClick={() => setSidebar(false)}
+              className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5"
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+            >
+              <SidebarToggleIcon direction="close" />
+            </button>
           )}
         </div>
 
@@ -193,7 +189,7 @@ export default function Home() {
           <div className="flex flex-1 flex-col items-center px-4 pb-8 pt-[15vh]">
             <div className="w-full max-w-[760px]">
               <div className="mb-8 text-center">
-                <div className="mx-auto mb-5 grid h-11 w-11 place-items-center overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+                <div className="mx-auto mb-5 grid h-11 w-11 place-items-center overflow-hidden rounded-2xl">
                   <img src={BRAND_LOGO} alt="Sanmine Space" className="h-full w-full object-cover" />
                 </div>
                 <h1 className="font-serif text-4xl tracking-[-0.035em] text-[#282721] md:text-[46px]">How can I help?</h1>
@@ -216,7 +212,7 @@ export default function Home() {
                       </div>
                     ) : (
                       <div className="flex max-w-[85%] gap-3 text-[15px] leading-7 text-[#37352f]">
-                        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
+                        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
                         <div className="whitespace-pre-wrap">{item.content}</div>
                       </div>
                     )}
@@ -224,7 +220,7 @@ export default function Home() {
                 ))}
                 {loading && (
                   <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
+                    <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg"><img src={BRAND_LOGO} alt="" className="h-full w-full object-cover" /></div>
                     <span className="flex items-center gap-2">Thinking <Loader2 size={14} className="animate-spin" /></span>
                   </div>
                 )}
