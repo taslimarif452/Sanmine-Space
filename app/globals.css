@@ -11,15 +11,26 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; }
+html { min-height: 100%; background: var(--bg); }
 body {
+  margin: 0;
+  min-height: 100vh;
   background: var(--bg);
   color: var(--text);
   font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
 button, textarea { font: inherit; }
 button { cursor: pointer; }
-::selection { background: #ead8cf; }
+button:disabled { cursor: default; }
+::selection { background: #ead8cf; color: #24231f; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d7d3ca; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #c5c0b5; }
 
 @keyframes pulse-soft { 0%,100% { opacity:.45 } 50% { opacity:1 } }
 .animate-pulse-soft { animation: pulse-soft 1.8s ease-in-out infinite; }
