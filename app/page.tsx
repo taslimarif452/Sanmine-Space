@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUp, Menu, Plus, Loader2, ExternalLink, Globe, Search } from "lucide-react";
+import { ArrowUp, Menu, Plus, Loader2, ExternalLink, Globe, Search, LogOut, UserCircle } from "lucide-react";
+import { useAuthUser } from "@/components/auth-gate";
+import { signOutCurrentUser } from "@/lib/auth/firebase-client";
 
 type Source = { title: string; url: string; snippet?: string; type?: string };
 type Message = { role: "user" | "assistant"; content: string; sources?: Source[] };
@@ -9,39 +11,16 @@ type Message = { role: "user" | "assistant"; content: string; sources?: Source[]
 const BRAND_LOGO = "https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
 const examples = ["Find 10 small businesses that could use a better website", "Research 10 Indian EdTech businesses and prepare outreach", "Find promising leads from YouTube and summarize them"];
 
-function SidebarToggleIcon({ direction }: { direction: "open" | "close" }) {
-  return <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" /><path d="M9 4.5V19.5" stroke="currentColor" strokeWidth="1.7" />{direction === "close" ? <path d="M13 9L16 12L13 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /> : <path d="M16 9L13 12L16 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />}</svg>;
-}
-
-function sourcesFromEvents(events: unknown[]): Source[] {
-  const found: Source[] = [];
-  for (const event of events ?? []) {
-    const e = event as { type?: string; name?: string; result?: unknown };
-    if (e.type !== "tool_result" || !e.result || (e.name !== "search_web" && e.name !== "open_page" && e.name !== "website_analyze")) continue;
-    const result = e.result as Record<string, unknown>;
-    if (e.name === "search_web" && Array.isArray(result.results)) {
-      for (const item of result.results as Array<Record<string, unknown>>) if (typeof item.url === "string" && item.url) found.push({ title: String(item.title || "Web source"), url: item.url, snippet: typeof item.snippet === "string" ? item.snippet : undefined, type: "Web" });
-    }
-    if (e.name === "open_page" && typeof result.url === "string") found.push({ title: String(result.title || "Web page"), url: result.url, snippet: typeof result.text === "string" ? result.text.slice(0, 180) : undefined, type: "Page" });
-    if (e.name === "website_analyze" && Array.isArray(result.pages_scanned)) {
-      for (const item of result.pages_scanned as Array<Record<string, unknown>>) if (typeof item.url === "string") found.push({ title: String(item.title || item.type || "Website page"), url: item.url, type: String(item.type || "Website") });
-    }
-  }
-  return [...new Map(found.map((s) => [s.url, s])).values()].slice(0, 12);
-}
+function SidebarToggleIcon({ direction }: { direction: "open" | "close" }) { return <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" /><path d="M9 4.5V19.5" stroke="currentColor" strokeWidth="1.7" />{direction === "close" ? <path d="M13 9L16 12L13 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /> : <path d="M16 9L13 12L16 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />}</svg>; }
+function sourcesFromEvents(events: unknown[]): Source[] { const found: Source[] = []; for (const event of events ?? []) { const e = event as { type?: string; name?: string; result?: unknown }; if (e.type !== "tool_result" || !e.result || (e.name !== "search_web" && e.name !== "open_page" && e.name !== "website_analyze")) continue; const result = e.result as Record<string, unknown>; if (e.name === "search_web" && Array.isArray(result.results)) for (const item of result.results as Array<Record<string, unknown>>) if (typeof item.url === "string" && item.url) found.push({ title: String(item.title || "Web source"), url: item.url, snippet: typeof item.snippet === "string" ? item.snippet : undefined, type: "Web" }); if (e.name === "open_page" && typeof result.url === "string") found.push({ title: String(result.title || "Web page"), url: result.url, snippet: typeof result.text === "string" ? result.text.slice(0, 180) : undefined, type: "Page" }); if (e.name === "website_analyze" && Array.isArray(result.pages_scanned)) for (const item of result.pages_scanned as Array<Record<string, unknown>>) if (typeof item.url === "string") found.push({ title: String(item.title || item.type || "Website page"), url: item.url, type: String(item.type || "Website") }); } return [...new Map(found.map((s) => [s.url, s])).values()].slice(0, 12); }
 
 export default function Home() {
-  const [message, setMessage] = useState(""); const [messages, setMessages] = useState<Message[]>([]); const [sidebar, setSidebar] = useState(true); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
-  const submit = async () => {
-    const text = message.trim(); if (!text || loading) return;
-    const nextMessages = [...messages, { role: "user" as const, content: text }]; setMessages(nextMessages); setMessage(""); setError(""); setLoading(true);
-    try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, history: messages }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to get a response.");
-      setMessages([...nextMessages, { role: "assistant", content: data.response, sources: sourcesFromEvents(data.events || []) }]);
-    } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong."); } finally { setLoading(false); }
-  };
+  const user = useAuthUser();
+  const [message, setMessage] = useState(""); const [messages, setMessages] = useState<Message[]>([]); const [sidebar, setSidebar] = useState(true); const [loading, setLoading] = useState(false); const [error, setError] = useState(""); const [profileOpen, setProfileOpen] = useState(false);
+  const submit = async () => { const text = message.trim(); if (!text || loading || !user) return; const nextMessages = [...messages, { role: "user" as const, content: text }]; setMessages(nextMessages); setMessage(""); setError(""); setLoading(true); try { const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, history: messages }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to get a response."); setMessages([...nextMessages, { role: "assistant", content: data.response, sources: sourcesFromEvents(data.events || []) }]); } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong."); } finally { setLoading(false); } };
   const newChat = () => { setMessages([]); setMessage(""); setError(""); };
+  const logout = async () => { setProfileOpen(false); await signOutCurrentUser(); };
+  const displayName = user?.displayName || user?.email?.split("@")[0] || "User"; const initials = displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   return <main className="flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">
     <aside className={`hidden h-screen min-h-0 shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] py-4 transition-[width] duration-200 md:flex ${sidebar ? "w-[270px] px-3" : "w-[72px] px-2"}`}>
       <div className={`flex shrink-0 items-center pb-5 ${sidebar ? "justify-between px-2" : "justify-center"}`}>
@@ -50,6 +29,13 @@ export default function Home() {
       </div>
       <button onClick={newChat} className={`flex shrink-0 items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${sidebar ? "gap-2 px-3" : "justify-center px-0"}`} title={!sidebar ? "New chat" : undefined} aria-label="New chat"><Plus size={17} />{sidebar && "New chat"}</button>
       {sidebar && <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div><div className="mt-2 space-y-0.5">{["Lead research ideas", "Website outreach plan", "EdTech prospects", "Small business leads", "Local agency research", "Outreach campaign", "YouTube prospects"].map((item) => <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">{item}</button>)}</div></div>}
+      <div className="relative mt-3 shrink-0 border-t border-[var(--line)] pt-3">
+        {profileOpen && <div className={`absolute bottom-full mb-2 rounded-xl border border-[var(--line)] bg-white p-2 shadow-[0_10px_30px_rgba(30,27,20,0.12)] ${sidebar ? "left-0 right-0" : "left-1/2 w-[230px] -translate-x-1/2"}`}>
+          <div className="flex items-center gap-3 px-2 py-2"><Avatar user={user} initials={initials} /><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#302e29]">{displayName}</div><div className="truncate text-xs text-[#858178]">{user.email}</div></div></div>
+          <button onClick={logout} className="mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-[#6d4b42] hover:bg-[#fff5f2]"><LogOut size={15} /> Log out</button>
+        </div>}
+        <button onClick={() => setProfileOpen((v) => !v)} className={`flex w-full items-center rounded-xl py-2.5 text-left hover:bg-black/5 ${sidebar ? "gap-3 px-2" : "justify-center px-0"}`} aria-label="Profile" aria-expanded={profileOpen} title={!sidebar ? displayName : undefined}><Avatar user={user} initials={initials} />{sidebar && <div className="min-w-0"><div className="truncate text-[13px] font-medium text-[#45423c]">{displayName}</div><div className="truncate text-[11px] text-[#949087]">{user.email}</div></div>}</button>
+      </div>
     </aside>
     <section className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="absolute right-4 top-4 z-20 md:right-7 md:top-5"><button onClick={newChat} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-[#4d4a44] transition hover:bg-black/5" aria-label="New chat" title="New chat"><Plus size={18} strokeWidth={2} /><span className="hidden sm:inline">New chat</span></button></div>
@@ -58,7 +44,7 @@ export default function Home() {
     </section>
   </main>;
 }
-
+function Avatar({ user, initials }: { user: { photoURL?: string | null }; initials: string }) { return user.photoURL ? <img src={user.photoURL} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#e4e1d9] text-[11px] font-semibold text-[#5b5850]"><UserCircle size={19} /></div>; }
 function SourceCards({ sources }: { sources: Source[] }) { return <div className="mt-5 border-t border-[var(--line)] pt-4"><div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#969188]"><Globe size={13} /> Sources</div><div className="grid gap-2 sm:grid-cols-2">{sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="group rounded-xl border border-[var(--line)] bg-white/45 p-3 transition hover:border-[#c8c4ba] hover:bg-white"><div className="flex items-start gap-2.5"><div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#ebe9e3] text-[#716d64]"><Search size={13} /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-[13px] font-medium text-[#39362f]"><span className="truncate">{source.title}</span><ExternalLink size={12} className="shrink-0 opacity-0 transition group-hover:opacity-100" /></div><div className="mt-0.5 truncate text-[10px] text-[#a09c93]">{source.url}</div>{source.snippet && <p className="mt-1.5 line-clamp-2 text-[11px] leading-4 text-[#77736a]">{source.snippet}</p>}</div></div></a>)}</div></div>; }
 function Composer({ message, setMessage, submit, loading }: { message: string; setMessage: (value: string) => void; submit: () => void; loading: boolean }) { return <div className="rounded-[22px] border border-[#dcd9d1] bg-[var(--panel)] p-2 shadow-[0_8px_35px_rgba(30,27,20,0.06)] focus-within:border-[#c8c4ba] focus-within:shadow-[0_10px_40px_rgba(30,27,20,0.09)]"><textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} rows={3} placeholder="Ask Sanmine Space to do something..." className="min-h-[92px] w-full resize-none border-0 bg-transparent px-4 py-3 text-[15px] leading-6 outline-none placeholder:text-[#aaa69d]" disabled={loading} /><div className="flex items-center justify-between px-2 pb-1"><span className="px-2 text-[11px] text-[#aaa69d]">Enter to send · Shift + Enter for new line</span><button onClick={submit} disabled={!message.trim() || loading} className="grid h-9 w-9 place-items-center rounded-xl bg-[#24231f] text-white transition hover:bg-[#3a3832] disabled:cursor-not-allowed disabled:opacity-25" aria-label="Send">{loading ? <Loader2 size={17} className="animate-spin" /> : <ArrowUp size={17} />}</button></div></div>; }
 function Suggestions({ setMessage }: { setMessage: (value: string) => void }) { return <div className="mt-5 flex flex-wrap justify-center gap-2">{examples.map((example) => <button key={example} onClick={() => setMessage(example)} className="rounded-full border border-[var(--line)] bg-white/40 px-3.5 py-2 text-xs text-[#68655e] transition hover:border-[#cbc7bd] hover:bg-white">{example}</button>)}</div>; }
