@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUp, ExternalLink, Globe, Loader2, LogOut, Menu, Plus, Search, UserCircle } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { signOutCurrentUser } from "@/lib/auth/firebase-client";
 
 type Source = { title: string; url: string; snippet?: string; type?: string };
 type Message = { role: "user" | "assistant"; content: string; sources?: Source[] };
+type RecentChat = { id: string; title: string; created_at: string; updated_at: string };
 
 const BRAND_LOGO = "https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
 const examples = ["Find 10 small businesses that could use a better website", "Research 10 Indian EdTech businesses and prepare outreach", "Find promising leads from YouTube and summarize them"];
@@ -29,13 +30,31 @@ function sourcesFromEvents(events: unknown[]): Source[] {
 }
 
 export default function Home() {
-  const user = useAuthUser()!;
+  const user = useAuthUser();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
   const [sidebar, setSidebar] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const loadRecentChats = async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch("/api/chats", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      setRecentChats(Array.isArray(data.chats) ? data.chats : []);
+    } catch (err) {
+      console.error("Recent chats load failed", err);
+    }
+  };
+
+  useEffect(() => {
+    void loadRecentChats();
+  }, [user]);
 
   const submit = async () => {
     const text = message.trim();
@@ -43,20 +62,27 @@ export default function Home() {
     const nextMessages = [...messages, { role: "user" as const, content: text }];
     setMessages(nextMessages); setMessage(""); setError(""); setLoading(true);
     try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, history: messages }) });
+      const token = await user.getIdToken();
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: text, history: messages }),
+      });
       const raw = await response.text();
-      let data: { response?: string; events?: unknown[]; error?: string } = {};
+      let data: { response?: string; events?: unknown[]; error?: string; code?: string } = {};
       if (raw.trim()) { try { data = JSON.parse(raw); } catch { throw new Error(`Server returned an invalid response (${response.status}).`); } }
       if (!response.ok) throw new Error(data.error || `Chat request failed (${response.status}).`);
       setMessages([...nextMessages, { role: "assistant", content: data.response || "I’m ready. What would you like me to do?", sources: sourcesFromEvents(data.events || []) }]);
+      await loadRecentChats();
     } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong."); }
     finally { setLoading(false); }
   };
 
   const newChat = () => { setMessages([]); setMessage(""); setError(""); };
   const logout = async () => { setProfileOpen(false); await signOutCurrentUser(); };
-  const displayName = user.displayName || user.email?.split("@")[0] || "User";
-  const initials = displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const displayName = user?.displayName || user?.email?.split("@")[0] || "User";
+
+  if (!user) return null;
 
   return <main className="flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">
     <aside className={`hidden h-screen min-h-0 shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] py-4 transition-[width] duration-200 md:flex ${sidebar ? "w-[270px] px-3" : "w-[72px] px-2"}`}>
@@ -65,7 +91,7 @@ export default function Home() {
         {sidebar && <button onClick={() => setSidebar(false)} className="rounded-md p-1.5 text-[#77746d] hover:bg-black/5" aria-label="Collapse sidebar"><SidebarToggleIcon direction="close" /></button>}
       </div>
       <button onClick={newChat} className={`flex shrink-0 items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${sidebar ? "gap-2 px-3" : "justify-center px-0"}`} aria-label="New chat"><Plus size={17} />{sidebar && "New chat"}</button>
-      {sidebar && <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div><div className="mt-2 space-y-0.5">{["Lead research ideas", "Website outreach plan", "EdTech prospects", "Small business leads", "Local agency research", "Outreach campaign", "YouTube prospects"].map((item) => <button key={item} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5">{item}</button>)}</div></div>}
+      {sidebar ? <div className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><div className="px-3 text-[11px] font-semibold uppercase tracking-[0.13em] text-[#99958c]">Recent</div><div className="mt-2 space-y-0.5">{recentChats.map((chat) => <button key={chat.id} onClick={() => setError("Open-chat history will be wired to the selected chat next.")} className="block w-full truncate rounded-lg px-3 py-2 text-left text-[13px] text-[#5e5b54] hover:bg-black/5" title={chat.title}>{chat.title}</button>)}{recentChats.length === 0 && <div className="px-3 py-2 text-[12px] text-[#aaa69d]">No recent chats yet.</div>}</div></div> : <div className="min-h-0 flex-1" />}
       <div className="relative mt-3 shrink-0 border-t border-[var(--line)] pt-3">
         {profileOpen && <div className={`absolute bottom-full mb-2 rounded-xl border border-[var(--line)] bg-white p-2 shadow-[0_10px_30px_rgba(30,27,20,0.12)] ${sidebar ? "left-0 right-0" : "left-1/2 w-[230px] -translate-x-1/2"}`}><div className="flex items-center gap-3 px-2 py-2"><Avatar user={user} /><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#302e29]">{displayName}</div><div className="truncate text-xs text-[#858178]">{user.email}</div></div></div><button onClick={logout} className="mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-[#6d4b42] hover:bg-[#fff5f2]"><LogOut size={15} /> Log out</button></div>}
         <button onClick={() => setProfileOpen((v) => !v)} className={`flex w-full items-center rounded-xl py-2.5 text-left hover:bg-black/5 ${sidebar ? "gap-3 px-2" : "justify-center px-0"}`} aria-label="Profile" aria-expanded={profileOpen} title={!sidebar ? displayName : undefined}><Avatar user={user} />{sidebar && <div className="min-w-0"><div className="truncate text-[13px] font-medium text-[#45423c]">{displayName}</div><div className="truncate text-[11px] text-[#949087]">{user.email}</div></div>}</button>
