@@ -2,14 +2,18 @@ import { NextResponse } from "next/server";
 import { runAgent } from "@/lib/agent/agent";
 import type { ChatMessage } from "@/lib/ai/provider";
 import { getRequestUser } from "@/lib/auth/request-user";
-import { sql } from "@/lib/db/neon";
+import { hasDatabaseConfig, sql } from "@/lib/db/neon";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function getCookie(request: Request, name: string) {
   const value = request.headers.get("cookie")?.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1];
   return value ? decodeURIComponent(value) : null;
 }
 
-async function persistChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, history: ChatMessage[], responseText: string, request: Request) {
+async function persistChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, responseText: string, request: Request) {
+  if (!hasDatabaseConfig()) return null;
   try {
     await sql`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT, image TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
     await sql`CREATE TABLE IF NOT EXISTS chats (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT 'New chat', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
@@ -46,7 +50,7 @@ export async function POST(request: Request) {
     if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
 
     const result = await runAgent(history, message);
-    const chatId = await persistChat(user, message, history, result.response, request);
+    const chatId = await persistChat(user, message, result.response, request);
     const response = NextResponse.json({ ...result, chatId, persistence: chatId ? "saved" : "unavailable" });
     if (chatId) {
       response.headers.set("x-chat-id", chatId);
@@ -56,7 +60,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Chat API error:", error);
     const message = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
-    const isAuth = /authentication|auth|token|credential|unauthorized|missing authentication/i.test(message);
+    const isAuth = /authentication|auth|token|credential|unauthorized|missing authentication|firebase/i.test(message);
     const isConfig = /not configured|not_configured|api key|private key|database_url/i.test(message);
     return NextResponse.json({ error: message, code: isAuth ? "AUTH_ERROR" : isConfig ? "CONFIG_ERROR" : "CHAT_ERROR" }, { status: isAuth ? 401 : 500 });
   }
