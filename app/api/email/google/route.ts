@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const user = await getRequestUser(request);
     const origin = new URL(request.url).origin;
     const state = createOAuthState(user.uid);
-    const response = NextResponse.redirect(googleAuthorizationUrl(state, origin));
+    const response = NextResponse.json({ url: googleAuthorizationUrl(state, origin) });
     response.cookies.set("sanmine_google_oauth_state", state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/" });
     return response;
   } catch (error) {
