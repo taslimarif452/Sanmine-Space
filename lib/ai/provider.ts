@@ -42,13 +42,15 @@ class GeminiProvider implements AIProvider {
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
     const key = process.env.GEMINI_API_KEY?.trim();
     if (!key) throw new Error("GEMINI_API_KEY is not configured in Vercel.");
+    const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash";
     const contents = messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const system = messages.find((m) => m.role === "system")?.content;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}), generationConfig: { temperature: 0.4 } }),
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
     });
-    if (!response.ok) throw new Error(await readProviderError(response, "Gemini"));
+    if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
     const data = await response.json();
     const parts = data.candidates?.[0]?.content?.parts || [];
     const text = parts.map((p: { text?: string }) => p.text || "").join("");
@@ -63,7 +65,7 @@ class OpenRouterProvider implements AIProvider {
     if (!key) throw new Error("OPENROUTER_API_KEY is not configured in Vercel.");
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
-      body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}), temperature: 0.4 }),
+      body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
     const data = await response.json();
