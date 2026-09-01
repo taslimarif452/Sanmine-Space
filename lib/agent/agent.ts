@@ -1,14 +1,69 @@
 import { getProvider, type ChatMessage } from "@/lib/ai/provider";
+import { getTool, getToolDefinitions } from "@/lib/agent/tools";
+import type { AgentEvent } from "@/lib/agent/tools/types";
 
 const SYSTEM_PROMPT = `You are Sanmine Space, a practical AI workspace for research and outreach.
 Be concise, useful, and transparent. You are the reasoning layer of an agentic system.
-When tools are added, explain what you are doing and never claim an external action happened unless a tool confirms it.`;
+You have access to tools. Use a tool when it is necessary to complete the user's request rather than pretending you already have external data.
+Never claim an external action happened unless a tool confirms it.
+If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.`;
 
-export async function runAgent(history: ChatMessage[], userMessage: string) {
+const MAX_TOOL_ROUNDS = 5;
+
+export async function runAgent(
+  history: ChatMessage[],
+  userMessage: string,
+  onEvent?: (event: AgentEvent) => void,
+) {
   const provider = getProvider();
-  return provider.chat([
+  const tools = getToolDefinitions();
+  const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history.slice(-12),
     { role: "user", content: userMessage },
-  ]);
+  ];
+
+  onEvent?.({ type: "thinking" });
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    const response = await provider.chat(messages, tools);
+
+    if (!response.toolCalls.length) {
+      return { response: response.text || "I’m ready. What would you like me to do?", events: [] };
+    }
+
+    for (const call of response.toolCalls) {
+      const tool = getTool(call.name);
+      onEvent?.({ type: "tool_start", name: call.name, toolCallId: call.id });
+
+      let result: unknown;
+      if (!tool) {
+        result = { status: "error", message: `Unknown tool: ${call.name}` };
+      } else {
+        try {
+          result = await tool.execute(call.arguments);
+        } catch (error) {
+          result = {
+            status: "error",
+            message: error instanceof Error ? error.message : "Tool execution failed.",
+          };
+        }
+      }
+
+      onEvent?.({ type: "tool_result", name: call.name, toolCallId: call.id, result });
+
+      if (response.text) {
+        messages.push({ role: "assistant", content: response.text });
+      }
+      messages.push({
+        role: "user",
+        content: `Tool result for ${call.name} (call ${call.id}):\n${JSON.stringify(result)}`,
+      });
+    }
+  }
+
+  return {
+    response: "I reached the tool-call limit for this request. Please try the task again.",
+    events: [],
+  };
 }
