@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const subject = String(body.subject || "").trim();
     const content = String(body.body || "").trim();
     const recipients = Array.isArray(body.recipients) ? body.recipients.map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean) : [];
-    const intervalMinutes = Math.max(1, Math.min(10080, Number(body.intervalMinutes || 60)));
+    const intervalMinutes = Math.max(60, Math.min(10080, Number(body.intervalMinutes || 60)));
     const start = body.startAt ? new Date(String(body.startAt)) : new Date();
     if (!name || !connectionId || !subject || !content || !recipients.length) return NextResponse.json({ error: "Name, Gmail connection, subject, body and at least one recipient are required." }, { status: 400 });
     if (Number.isNaN(start.getTime())) return NextResponse.json({ error: "Invalid start time." }, { status: 400 });
