@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth/request-user";
 import { hasDatabaseConfig, sql } from "@/lib/db/neon";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 async function ensureChatTables() {
   await sql`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT, image TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
   await sql`CREATE TABLE IF NOT EXISTS chats (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT 'New chat', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
@@ -9,7 +12,7 @@ async function ensureChatTables() {
 }
 
 function isAuthError(message: string) {
-  return /authentication|auth|token|credential|unauthorized|missing authentication/i.test(message);
+  return /authentication|auth|token|credential|unauthorized|missing authentication|firebase/i.test(message);
 }
 
 export async function GET(request: Request) {
@@ -26,8 +29,6 @@ export async function GET(request: Request) {
     console.error("Recent chats GET error:", error);
     const message = error instanceof Error ? error.message : "Unable to load recent chats.";
     if (isAuthError(message)) return NextResponse.json({ error: message, code: "AUTH_ERROR" }, { status: 401 });
-
-    // Chat should not be blocked by a temporary persistence/database problem.
     return NextResponse.json({ chats: [], persistence: "unavailable", warning: message.slice(0, 300) });
   }
 }
@@ -38,6 +39,11 @@ export async function POST(request: Request) {
     if (!hasDatabaseConfig()) return NextResponse.json({ error: "Neon DATABASE_URL is not configured.", code: "CONFIG_ERROR" }, { status: 503 });
 
     await ensureChatTables();
+    await sql`
+      INSERT INTO users (id, email, name, image)
+      VALUES (${user.uid}, ${user.email ?? `${user.uid}@unknown.local`}, ${user.name ?? null}, ${user.picture ?? null})
+      ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, image = EXCLUDED.image, updated_at = NOW()
+    `;
     const body = await request.json();
     const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 120) : "New chat";
     const rows = await sql`INSERT INTO chats (user_id, title) VALUES (${user.uid}, ${title}) RETURNING id, title, created_at, updated_at`;
