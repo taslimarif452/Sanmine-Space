@@ -32,3 +32,36 @@ button:disabled { cursor: default; }
 
 @keyframes pulse-soft { 0%,100% { opacity:.45 } 50% { opacity:1 } }
 .animate-pulse-soft { animation: pulse-soft 1.8s ease-in-out infinite; }
+
+/* Collapsed desktop sidebar: keep the brand mark visible and reveal the expand control on hover. */
+@media (min-width: 768px) {
+  aside button[aria-label="Expand sidebar"] {
+    background-image: url("https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 28px 28px;
+    transition: background-size .15s ease, background-color .15s ease;
+  }
+
+  aside button[aria-label="Expand sidebar"] svg {
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+
+  aside button[aria-label="Expand sidebar"]:hover {
+    background-image: none;
+    background-color: rgba(0,0,0,.045);
+  }
+
+  aside button[aria-label="Expand sidebar"]:hover svg {
+    opacity: 1;
+  }
+}
+
+/* Mobile drawer: 50–60% viewport width as requested. */
+@media (max-width: 767px) {
+  aside {
+    width: 55vw !important;
+    max-width: 60vw !important;
+  }
+}
