@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { Check, Mail, PlugZap, Unplug } from "lucide-react";
 import type { User } from "firebase/auth";
+import { usePathname } from "next/navigation";
 
 type Connection = { id: string; provider: "google" | "microsoft"; email: string; display_name?: string | null };
 
 export function EmailConnections({ user }: { user: User }) {
+  const pathname = usePathname();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [busy, setBusy] = useState<"google" | "microsoft" | string | null>(null);
   const [error, setError] = useState("");
@@ -21,7 +23,7 @@ export function EmailConnections({ user }: { user: User }) {
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to load email accounts."); }
   };
 
-  useEffect(() => { void load(); }, [user.uid]);
+  useEffect(() => { if (pathname === "/plugins") void load(); }, [user.uid, pathname]);
 
   const connect = async (provider: "google" | "microsoft") => {
     setBusy(provider); setError("");
@@ -46,18 +48,20 @@ export function EmailConnections({ user }: { user: User }) {
     finally { setBusy(null); }
   };
 
-  return <div className="mt-2 border-t border-[#e8e4dc] pt-2">
-    <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[.11em] text-[#969188]"><Mail size={13}/>Email accounts</div>
+  if (pathname !== "/plugins") return null;
+
+  return <div className="mt-2">
+    <div className="mb-3 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[.11em] text-[#969188]"><Mail size={13}/>Email accounts</div>
     <div className="space-y-1">
-      {connections.map(c => <div key={c.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#f0eee8]"><Check size={13}/></span>
-        <div className="min-w-0 flex-1"><div className="truncate font-medium">{c.display_name || (c.provider === "google" ? "Gmail" : "Outlook")}</div><div className="truncate text-[10px] text-[#969188]">{c.email}</div></div>
-        <button onClick={() => void disconnect(c.id)} disabled={busy === c.id} className="grid h-7 w-7 place-items-center rounded-md text-[#817c73] hover:bg-black/5 disabled:opacity-40" aria-label={`Disconnect ${c.email}`} title="Disconnect"><Unplug size={13}/></button>
+      {connections.map(c => <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[#e8e4dc] bg-white/60 px-3 py-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f0eee8]"><Check size={14}/></span>
+        <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{c.display_name || (c.provider === "google" ? "Gmail" : "Outlook")}</div><div className="truncate text-xs text-[#969188]">{c.email}</div></div>
+        <button onClick={() => void disconnect(c.id)} disabled={busy === c.id} className="grid h-8 w-8 place-items-center rounded-lg text-[#817c73] hover:bg-black/5 disabled:opacity-40" aria-label={`Disconnect ${c.email}`} title="Disconnect"><Unplug size={14}/></button>
       </div>)}
-      <button onClick={() => void connect("google")} disabled={busy !== null} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs hover:bg-black/5 disabled:opacity-40"><span className="grid h-6 w-6 place-items-center rounded-full bg-white"><GoogleMark/></span><span className="flex-1 text-left">{busy === "google" ? "Connecting…" : "Connect Gmail"}</span><PlugZap size={13}/></button>
-      <button onClick={() => void connect("microsoft")} disabled={busy !== null} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs hover:bg-black/5 disabled:opacity-40"><span className="grid h-6 w-6 place-items-center rounded-full bg-white"><MicrosoftMark/></span><span className="flex-1 text-left">{busy === "microsoft" ? "Connecting…" : "Connect Outlook"}</span><PlugZap size={13}/></button>
+      <button onClick={() => void connect("google")} disabled={busy !== null} className="flex w-full items-center gap-3 rounded-xl border border-[#e8e4dc] bg-white/60 px-3 py-3 text-sm hover:bg-white disabled:opacity-40"><span className="grid h-8 w-8 place-items-center rounded-full bg-white"><GoogleMark/></span><span className="flex-1 text-left">{busy === "google" ? "Connecting…" : "Connect Gmail"}</span><PlugZap size={14}/></button>
+      <button onClick={() => void connect("microsoft")} disabled={busy !== null} className="flex w-full items-center gap-3 rounded-xl border border-[#e8e4dc] bg-white/60 px-3 py-3 text-sm hover:bg-white disabled:opacity-40"><span className="grid h-8 w-8 place-items-center rounded-full bg-white"><MicrosoftMark/></span><span className="flex-1 text-left">{busy === "microsoft" ? "Connecting…" : "Connect Outlook"}</span><PlugZap size={14}/></button>
     </div>
-    {error && <div className="mt-2 rounded-lg bg-[#fff6f2] px-2.5 py-2 text-[10px] leading-4 text-[#8b5145]">{error}</div>}
+    {error && <div className="mt-3 rounded-xl bg-[#fff6f2] px-3 py-2 text-xs leading-5 text-[#8b5145]">{error}</div>}
   </div>;
 }
 
