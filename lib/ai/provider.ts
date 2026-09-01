@@ -6,22 +6,41 @@ export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unkn
 export interface AIProvider { chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse>; }
 
 export function getProvider(): AIProvider {
-  return process.env.AI_PROVIDER === "openrouter" ? new OpenRouterProvider() : new GeminiProvider();
+  const selected = (process.env.AI_PROVIDER || "gemini").trim().toLowerCase();
+  return selected === "openrouter" ? new ResilientProvider(new OpenRouterProvider(), new GeminiProvider()) : new ResilientProvider(new GeminiProvider(), new OpenRouterProvider());
+}
+
+class ResilientProvider implements AIProvider {
+  constructor(private readonly primary: AIProvider, private readonly fallback: AIProvider) {}
+
+  async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
+    try {
+      return await this.primary.chat(messages, tools);
+    } catch (primaryError) {
+      try {
+        return await this.fallback.chat(messages, tools);
+      } catch (fallbackError) {
+        const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
+        throw new Error(`AI providers failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`);
+      }
+    }
+  }
 }
 
 async function readProviderError(response: Response, provider: string) {
   const raw = await response.text();
-  let detail = raw;
+  let detail = raw || "No response body returned.";
   try {
     const parsed = JSON.parse(raw);
-    detail = parsed?.error?.message || parsed?.message || raw;
+    detail = parsed?.error?.message || parsed?.message || raw || detail;
   } catch { /* provider returned non-JSON */ }
-  return `${provider} request failed (${response.status}): ${detail.slice(0, 500)}`;
+  return `${provider} request failed (${response.status}): ${String(detail).slice(0, 500)}`;
 }
 
 class GeminiProvider implements AIProvider {
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
-    const key = process.env.GEMINI_API_KEY;
+    const key = process.env.GEMINI_API_KEY?.trim();
     if (!key) throw new Error("GEMINI_API_KEY is not configured in Vercel.");
     const contents = messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const system = messages.find((m) => m.role === "system")?.content;
@@ -40,7 +59,7 @@ class GeminiProvider implements AIProvider {
 
 class OpenRouterProvider implements AIProvider {
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
-    const key = process.env.OPENROUTER_API_KEY;
+    const key = process.env.OPENROUTER_API_KEY?.trim();
     if (!key) throw new Error("OPENROUTER_API_KEY is not configured in Vercel.");
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
