@@ -2,12 +2,14 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { usePathname } from "next/navigation";
 import { getFirebaseAuth, signInWithGoogle } from "@/lib/auth/firebase-client";
 
 const AuthUserContext = createContext<User | null>(null);
 export function useAuthUser() { return useContext(AuthUserContext); }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return () => { window.fetch = originalFetch; };
   }, [user]);
 
+  if (pathname === "/privacy") return <>{children}</>;
   if (loading) return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted)]">Loading Sanmine Space…</div>;
   if (!user) return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} />;
   return <AuthUserContext.Provider value={user}>{children}</AuthUserContext.Provider>;
@@ -49,15 +52,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
 function LandingLogin({ error, busy, setBusy, setError }: { error: string; busy: boolean; setBusy: (v: boolean) => void; setError: (v: string) => void }) {
   const login = async () => { setBusy(true); setError(""); try { await signInWithGoogle(); } catch (e) { setError(e instanceof Error ? e.message : "Google sign-in failed."); } finally { setBusy(false); } };
+  const logo = "https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
   return <main className="min-h-screen overflow-y-auto bg-[var(--bg)] text-[var(--text)]">
-    <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 md:px-10"><div className="font-serif text-2xl tracking-[-.035em]">Sanmine Space</div><a href="/privacy" className="text-sm text-[var(--muted)] hover:text-[var(--text)]">Privacy</a></header>
-    <section className="mx-auto flex min-h-[calc(100vh-88px)] max-w-5xl flex-col items-center justify-center px-6 pb-20 text-center">
-      <p className="mb-6 text-xs font-semibold uppercase tracking-[.2em] text-[var(--muted)]">AI workspace for modern outreach</p>
-      <h1 className="max-w-4xl font-serif text-5xl leading-[.98] tracking-[-.045em] md:text-7xl">Research smarter. Reach the right people.</h1>
-      <p className="mt-7 max-w-2xl text-base leading-7 text-[var(--muted)] md:text-lg">A focused workspace for AI research, leads, proposals and thoughtful outreach.</p>
-      <button onClick={login} disabled={busy || Boolean(error && error.startsWith("Firebase is not configured"))} className="mt-9 inline-flex items-center gap-3 rounded-xl bg-[#292822] px-6 py-3.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"><GoogleIcon />{busy ? "Signing in…" : "Continue with Google"}</button>
+    <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 md:px-10">
+      <a href="/" className="flex items-center gap-3"><span className="h-8 w-8 overflow-hidden rounded-lg"><img src={logo} alt="Sanmine Space" className="h-full w-full object-cover" /></span><span className="font-serif text-xl tracking-[-.035em]">Sanmine Space</span></a>
+      <div className="flex items-center gap-5 text-sm"><a href="/privacy" className="text-[var(--muted)] hover:text-[var(--text)]">Privacy</a><button onClick={login} className="rounded-lg border border-[#d8d5cd] bg-white px-4 py-2 font-medium text-[#302e29] shadow-sm hover:bg-[#faf9f6]">Log in</button></div>
+    </header>
+    <section className="mx-auto flex min-h-[calc(100vh-90px)] max-w-5xl flex-col items-center justify-center px-6 pb-24 text-center">
+      <div className="mb-7 h-14 w-14 overflow-hidden rounded-2xl shadow-sm"><img src={logo} alt="" className="h-full w-full object-cover" /></div>
+      <p className="mb-5 text-xs font-semibold uppercase tracking-[.2em] text-[var(--muted)]">AI workspace for research & outreach</p>
+      <h1 className="max-w-4xl font-serif text-5xl leading-[.96] tracking-[-.05em] md:text-7xl">From research to outreach, in one focused workspace.</h1>
+      <p className="mt-7 max-w-2xl text-base leading-7 text-[var(--muted)] md:text-lg">Research leads, understand prospects, create proposals and prepare thoughtful outreach with AI.</p>
+      <button onClick={login} disabled={busy} className="mt-9 inline-flex items-center gap-3 rounded-xl bg-[#292822] px-6 py-3.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"><GoogleIcon />{busy ? "Signing in…" : "Continue with Google"}</button>
       {error && <p className="mt-4 max-w-md text-xs text-[#8c4b36]">{error}</p>}
-      <p className="mt-5 text-xs text-[var(--muted)]">Sign in to access your private workspace and saved chats.</p>
+      <p className="mt-5 text-xs text-[var(--muted)]">Private workspace · Google sign-in · Your data stays associated with your account</p>
     </section>
   </main>;
 }
