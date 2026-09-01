@@ -74,6 +74,29 @@ button:disabled { cursor: default; }
   section .flex.gap-3 > img {
     display: none !important;
   }
+
+  /* Mobile drawer/header controls: round white icon surfaces only on mobile. */
+  button:has(> svg > path[d="M4 7.5h16M4 16.5h12"]) {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    border-radius: 9999px !important;
+    background: #fff !important;
+    border: 1px solid rgba(36,35,31,.08) !important;
+    box-shadow: 0 1px 3px rgba(36,35,31,.06) !important;
+  }
+
+  button:has(> svg.lucide-plus) {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    border-radius: 9999px !important;
+    background: #fff !important;
+    border: 1px solid rgba(36,35,31,.08) !important;
+    box-shadow: 0 1px 3px rgba(36,35,31,.06) !important;
+  }
 }
 
 /* Assistant message/processing logo is hidden at all viewport sizes. */
