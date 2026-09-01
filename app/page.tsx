@@ -25,6 +25,7 @@ useEffect(()=>{if(!msgs.length)return;requestAnimationFrame(()=>scrollLatest("au
 useEffect(()=>{if(!scrollRef.current)return;if(followRef.current)requestAnimationFrame(()=>scrollLatest("auto"))},[msgs.length,loading]);
 useEffect(()=>{if(editingId)requestAnimationFrame(()=>{editRef.current?.focus();editRef.current?.select()})},[editingId]);
 useEffect(()=>()=>{if(longPressTimer.current!==null)window.clearTimeout(longPressTimer.current)},[]);
+useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close)},[menu]);/* chat-menu-outside-click */
 const beginLongPress=(id:string)=>{if(editingId===id)return;suppressClick.current=false;if(longPressTimer.current!==null)window.clearTimeout(longPressTimer.current);longPressTimer.current=window.setTimeout(()=>{suppressClick.current=true;setMenu(id)},550)};
 const endLongPress=()=>{if(longPressTimer.current!==null){window.clearTimeout(longPressTimer.current);longPressTimer.current=null}};
 const handleChatClick=(id:string)=>{if(suppressClick.current){suppressClick.current=false;return}void open(id)};
