@@ -14,19 +14,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Add outside-click handler
+      - name: Make chat menu close on outside interaction
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('app/page.tsx')
           s = p.read_text()
-          marker = '/* chat-menu-outside-click */'
+          marker = '/* chat-menu-outside-click-v2 */'
           if marker not in s:
-              needle = 'useEffect(()=>()=>{if(longPressTimer.current!==null)window.clearTimeout(longPressTimer.current)},[]);'
-              addition = needle + '\nuseEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close)},[menu]);'+marker
-              if needle not in s:
-                  raise SystemExit('Expected chat menu hook was not found')
-              p.write_text(s.replace(needle, addition, 1))
+              old = 'useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close)},[menu]);/* chat-menu-outside-click */'
+              new = 'useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close,true);document.addEventListener("mousedown",close,true);document.addEventListener("touchstart",close,true);document.addEventListener("click",close,true);return()=>{document.removeEventListener("pointerdown",close,true);document.removeEventListener("mousedown",close,true);document.removeEventListener("touchstart",close,true);document.removeEventListener("click",close,true)}},[menu]);'+marker
+              if old not in s:
+                  raise SystemExit('Expected chat menu outside-click hook was not found')
+              p.write_text(s.replace(old, new, 1))
           PY
       - name: Commit patch
         run: |
@@ -34,5 +34,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/page.tsx
-          git commit -m 'Fix chat menu closing on outside click'
+          git commit -m 'Close chat actions menu on any outside interaction'
           git push
