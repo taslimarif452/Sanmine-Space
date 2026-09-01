@@ -4,8 +4,8 @@ export const metadata = { title: "Privacy Policy — Sanmine Space", description
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-screen overflow-y-auto bg-[var(--bg)] px-6 py-10 text-[var(--text)]">
-      <article className="mx-auto max-w-3xl">
+    <main className="fixed inset-0 overflow-y-auto bg-[var(--bg)] px-6 py-10 text-[var(--text)] md:px-8">
+      <article className="mx-auto max-w-3xl pb-16">
         <Link href="/" className="text-sm text-[var(--muted)] hover:text-[var(--text)]">← Sanmine Space</Link>
         <h1 className="mt-12 font-serif text-5xl tracking-[-0.04em]">Privacy Policy</h1>
         <p className="mt-4 text-sm text-[var(--muted)]">Last updated: September 2, 2026</p>
