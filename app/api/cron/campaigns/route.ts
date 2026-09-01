@@ -15,13 +15,12 @@ export async function GET(request: Request) {
     const due = await sql`SELECT a.id, a.user_id FROM email_approvals a LEFT JOIN campaigns c ON c.id=a.campaign_id WHERE a.status='approved' AND (a.scheduled_at IS NULL OR a.scheduled_at <= NOW()) AND (a.campaign_id IS NULL OR c.status='active') ORDER BY COALESCE(a.scheduled_at, a.created_at) ASC LIMIT 20`;
     const results: Array<{ id: string; ok: boolean; error?: string }> = [];
     for (const row of due as any[]) {
-      const claimed = await sql`UPDATE email_approvals SET status='sending', updated_at=NOW() WHERE id=${row.id} AND status='approved' RETURNING id`;
-      if (!claimed[0]) continue;
       try {
         await sendApproval(String(row.id), String(row.user_id));
         results.push({ id: String(row.id), ok: true });
       } catch (error) {
-        results.push({ id: String(row.id), ok: false, error: error instanceof Error ? error.message : "Send failed." });
+        const message = error instanceof Error ? error.message : "Send failed.";
+        if (!message.includes("already being sent") && !message.includes("already sent")) results.push({ id: String(row.id), ok: false, error: message });
       }
     }
     await sql`UPDATE campaigns c SET status='completed', updated_at=NOW() WHERE c.status='active' AND NOT EXISTS (SELECT 1 FROM email_approvals a WHERE a.campaign_id=c.id AND a.status IN ('pending','approved','sending'))`;
