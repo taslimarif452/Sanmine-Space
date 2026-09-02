@@ -8,7 +8,7 @@ You have access to tools. Use a tool when it is necessary to complete the user's
 
 TOOL ROUTING — IMPORTANT:
 - If the user asks about YouTube, YouTubers, creators, channels, channel statistics, creator discovery, or YouTube videos, you MUST use the youtube_search tool first. Do NOT use search_web as a substitute for YouTube data.
-- For requests such as "YouTube se 10 creator ka details nikalo", call youtube_search with type="creator" and limit=10. The result must come from YouTube Data API v3.
+- For requests such as "YouTube se 10 creator ka details nikalo", use youtube_search with type="creator" and limit=10. The result must come from YouTube Data API v3.
 - Never scrape or cite another website as the source of a YouTube creator/channel result when youtube_search is available.
 - If youtube_search returns not_configured or an API error, clearly report that YouTube Data API v3 is unavailable; do not silently fall back to random websites.
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
@@ -27,6 +27,8 @@ When generating outreach copy, use available research from the conversation and 
 If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.`;
 
 const MAX_TOOL_ROUNDS = 8;
+const isYouTubeRequest = (message: string) => /\byoutube\b|\byoutuber(s)?\b|youtube\s*(creator|channel|video)/i.test(message);
+const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel|channels|subscriber|followers|views/i.test(message);
 
 export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void) {
   const provider = getProvider();
@@ -41,6 +43,28 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
 
   emit({ type: "thinking" });
 
+  // Deterministic YouTube routing: creator/channel/video requests must hit the
+  // YouTube Data API v3 tool before the general model can choose web search.
+  if (isYouTubeRequest(userMessage)) {
+    const youtube = getTool("youtube_search");
+    if (!youtube) {
+      return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
+    }
+    emit({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
+    let result: unknown;
+    try {
+      result = await youtube.execute({
+        query: userMessage,
+        limit: 10,
+        type: isCreatorRequest(userMessage) ? "creator" : "video",
+      });
+    } catch (error) {
+      result = { status: "error", message: error instanceof Error ? error.message : "YouTube search failed." };
+    }
+    emit({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
+    messages.push({ role: "user", content: `YouTube Data API v3 tool result:\n${JSON.stringify(result)}` });
+  }
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const response = await provider.chat(messages, tools);
     if (!response.toolCalls.length) {
@@ -49,6 +73,12 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
 
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
+      // Avoid a duplicate YouTube call after deterministic routing unless the
+      // model explicitly needs a different YouTube query.
+      if (isYouTubeRequest(userMessage) && call.name === "youtube_search") {
+        messages.push({ role: "user", content: "The YouTube Data API v3 search has already been executed. Use that result to answer the user; do not call youtube_search again unless a different query is genuinely required." });
+        continue;
+      }
       emit({ type: "tool_start", name: call.name, toolCallId: call.id });
       let result: unknown;
       if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
