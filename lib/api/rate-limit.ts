@@ -2,6 +2,17 @@ import { sql } from "@/lib/db/neon";
 import { AppError } from "@/lib/api/errors";
 
 export async function enforceRateLimit(key: string, limit: number, windowMs: number) {
+  // Self-heal the rate limiter so an existing production database cannot fail
+  // just because its migration history predates this table.
+  await sql`
+    CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+      key TEXT PRIMARY KEY,
+      window_started_at TIMESTAMPTZ NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
   const now = Date.now();
   const current = new Date(now);
   const windowStart = new Date(now - (now % windowMs));
