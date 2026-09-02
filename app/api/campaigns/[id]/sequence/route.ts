@@ -1,0 +1,11 @@
+import { NextResponse } from "next/server";
+import { getRequestUser } from "@/lib/auth/request-user";
+import { sql } from "@/lib/db/neon";
+import { runProductionMigrations } from "@/lib/db/migrations";
+import { AppError,errorResponse,errorStatus } from "@/lib/api/errors";
+import { enforceRateLimit } from "@/lib/api/rate-limit";
+import { z } from "zod";
+const Step=z.object({stepOrder:z.number().int().min(1).max(20),delayMinutes:z.number().int().min(0).max(43200),subject:z.string().trim().min(1).max(998),body:z.string().trim().min(1).max(100000)});
+const Body=z.object({steps:z.array(Step).min(1).max(20)});
+export async function GET(request:Request,{params}:{params:Promise<{id:string}>}){try{const user=await getRequestUser(request);await runProductionMigrations();const {id}=await params;const campaign=await sql`SELECT id FROM campaigns WHERE id=${id} AND user_id=${user.uid}`;if(!campaign[0])throw new AppError("NOT_FOUND","Campaign not found.",404);const steps=await sql`SELECT * FROM campaign_steps WHERE campaign_id=${id} ORDER BY step_order`;return NextResponse.json({steps});}catch(error){return NextResponse.json(errorResponse(error,"Unable to load sequence."),{status:errorStatus(error)});}}
+export async function PUT(request:Request,{params}:{params:Promise<{id:string}>}){try{const user=await getRequestUser(request);await runProductionMigrations();await enforceRateLimit(`campaign:sequence:${user.uid}`,30,60_000);const {id}=await params;const parsed=Body.safeParse(await request.json().catch(()=>null));if(!parsed.success)throw new AppError("VALIDATION_ERROR","Invalid campaign sequence.",400);const campaign=await sql`SELECT id FROM campaigns WHERE id=${id} AND user_id=${user.uid}`;if(!campaign[0])throw new AppError("NOT_FOUND","Campaign not found.",404);await sql`DELETE FROM campaign_steps WHERE campaign_id=${id}`;const saved=[];for(const step of parsed.data.steps){const rows=await sql`INSERT INTO campaign_steps(campaign_id,step_order,delay_minutes,subject,body) VALUES(${id},${step.stepOrder},${step.delayMinutes},${step.subject},${step.body}) RETURNING *`;saved.push(rows[0]);}return NextResponse.json({steps:saved});}catch(error){return NextResponse.json(errorResponse(error,"Unable to save campaign sequence."),{status:errorStatus(error)});}}
