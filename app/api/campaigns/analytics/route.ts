@@ -3,19 +3,4 @@ import { getRequestUser } from "@/lib/auth/request-user";
 import { sql } from "@/lib/db/neon";
 import { ensureCampaignTables } from "@/lib/email/campaigns";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
-
-export async function GET(request: Request) {
-  const user = await getRequestUser(request); await ensureCampaignTables(); await enforceRateLimit(`campaign:analytics:${user.uid}`, 60, 60_000);
-  const campaigns = await sql`
-    SELECT c.id,c.name,c.status,c.created_at,
-      COUNT(a.id)::int AS total,
-      COUNT(a.id) FILTER (WHERE a.status='sent')::int AS sent,
-      COUNT(a.id) FILTER (WHERE a.status='failed')::int AS failed,
-      COUNT(a.id) FILTER (WHERE a.status='send_unknown')::int AS unknown,
-      COUNT(a.id) FILTER (WHERE a.status IN ('pending','approved','sending'))::int AS pending,
-      COUNT(e.id) FILTER (WHERE e.event_type='replied')::int AS replies,
-      COUNT(e.id) FILTER (WHERE e.event_type='bounced')::int AS bounces
-    FROM campaigns c LEFT JOIN email_approvals a ON a.campaign_id=c.id LEFT JOIN email_events e ON e.campaign_id=c.id
-    WHERE c.user_id=${user.uid} GROUP BY c.id ORDER BY c.created_at DESC`;
-  return NextResponse.json({ campaigns });
-}
+export async function GET(request:Request){try{const user=await getRequestUser(request);await ensureCampaignTables();await enforceRateLimit(`campaign:analytics:${user.uid}`,60,60_000);const campaigns=await sql`WITH approval_stats AS (SELECT campaign_id,COUNT(*)::int total,COUNT(*) FILTER(WHERE status='sent')::int sent,COUNT(*) FILTER(WHERE status='failed')::int failed,COUNT(*) FILTER(WHERE status='send_unknown')::int unknown,COUNT(*) FILTER(WHERE status IN('pending','approved','sending'))::int pending FROM email_approvals GROUP BY campaign_id),event_stats AS (SELECT campaign_id,COUNT(*) FILTER(WHERE event_type='replied')::int replies,COUNT(*) FILTER(WHERE event_type='bounced')::int bounces,COUNT(*) FILTER(WHERE event_type='delivered')::int delivered,COUNT(*) FILTER(WHERE event_type='opened')::int opened,COUNT(*) FILTER(WHERE event_type='clicked')::int clicked FROM email_events WHERE campaign_id IS NOT NULL GROUP BY campaign_id) SELECT c.id,c.name,c.status,c.created_at,COALESCE(a.total,0)::int total,COALESCE(a.sent,0)::int sent,COALESCE(a.failed,0)::int failed,COALESCE(a.unknown,0)::int unknown,COALESCE(a.pending,0)::int pending,COALESCE(e.replies,0)::int replies,COALESCE(e.bounces,0)::int bounces,COALESCE(e.delivered,0)::int delivered,COALESCE(e.opened,0)::int opened,COALESCE(e.clicked,0)::int clicked FROM campaigns c LEFT JOIN approval_stats a ON a.campaign_id=c.id LEFT JOIN event_stats e ON e.campaign_id=c.id WHERE c.user_id=${user.uid} ORDER BY c.created_at DESC`;return NextResponse.json({campaigns});}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Unable to load analytics."},{status:500});}}
