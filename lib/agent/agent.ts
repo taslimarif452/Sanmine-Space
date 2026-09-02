@@ -16,7 +16,8 @@ TOOL ROUTING — IMPORTANT:
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
-- IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, do not stop at drafting. Use send_proposal_outreach. That tool researches public business/contact emails, personalizes the proposal from the supplied YouTube/web research, and sends through the user's connected Gmail. Only public business/contact emails may be used; never guess an email address. If no public business email is found, skip that prospect and report it.
+- IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, do not stop at drafting. Use send_proposal_outreach. That tool MUST first verify that Gmail or another supported sending provider is connected. If no provider is connected, stop immediately and tell the user, in the same language as their request, to install/connect the email plugin from Plugins. Do not research contacts or claim anything was sent until a provider is connected.
+- If a provider is connected, send_proposal_outreach researches public business/contact emails, personalizes each proposal from the supplied research, and sends it through the connected provider. Only public business/contact emails may be used; never guess an email address. If no public business email is found, skip that prospect and report it.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
 
 RESPONSE FORMAT:
@@ -26,6 +27,7 @@ RESPONSE FORMAT:
 - Keep tables readable; do not put huge paragraphs inside table cells.
 - Use source URLs from tool results when explaining research findings. Never invent sources.
 - Never claim an external action happened unless a tool confirms it.
+- Reply in the same language/style as the user's latest message whenever practical, including for send results and connection errors.
 
 When generating outreach copy, use available research from the conversation and tool results for personalization. Never invent company facts, metrics, case studies, pricing, dates, relationships, or claims. Missing commercial details should remain TBD or be left as a clear placeholder.
 If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.`;
@@ -36,7 +38,18 @@ const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
 const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bbhej/i.test(message);
-const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bbhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these/i.test(message);
+const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bbhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
+
+function detectLanguage(text: string) {
+  if (/[\u0900-\u097F]/.test(text) || /\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text)) return "hi";
+  if (/[\u0980-\u09FF]/.test(text)) return "bn";
+  if (/[\u4E00-\u9FFF]/.test(text)) return "zh";
+  if (/[\u3040-\u30FF]/.test(text)) return "ja";
+  if (/[\uAC00-\uD7AF]/.test(text)) return "ko";
+  if (/\b(quiero|envía|enviar|correo|primero|conecta|conectado|sitio web)\b/i.test(text)) return "es";
+  if (/\b(je veux|envoyer|e-mail|connecte|connecté|site web)\b/i.test(text)) return "fr";
+  return "en";
+}
 
 function stripCell(value: string) {
   return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
@@ -81,24 +94,34 @@ function parseResearchTargets(history: ChatMessage[]) {
   return [] as Array<Record<string, string>>;
 }
 
-function buildSendSummary(result: any) {
+function buildSendSummary(result: any, language: string) {
+  if (result?.status === "needs_connection" || result?.status === "provider_unavailable") return String(result.message || "Please connect an email provider from Plugins before sending.");
   const sent = Array.isArray(result?.sent) ? result.sent : [];
   const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
   const failed = Array.isArray(result?.failed) ? result.failed : [];
+  const labels = {
+    hi: { title: "## Outreach complete", processed: "Maine", prospects: "researched prospects ko process kiya", sent: "### Successfully sent", none: "Kisi ko send nahi hua", skipped: "### Skipped", failed: "### Failed", proof: "Har sent email ko Gmail success response ke baad hi sent maana gaya hai." },
+    bn: { title: "## Outreach সম্পন্ন", processed: "আমি", prospects: "জন researched prospect process করেছি", sent: "### সফলভাবে পাঠানো হয়েছে", none: "কোনও email পাঠানো হয়নি", skipped: "### Skipped", failed: "### Failed", proof: "Gmail-এর সফল response পাওয়ার পরেই কোনও email-কে sent হিসেবে ধরা হয়েছে।" },
+    es: { title: "## Outreach completado", processed: "Procesé", prospects: "prospectos investigados", sent: "### Enviados correctamente", none: "No se envió ningún email", skipped: "### Omitidos", failed: "### Fallidos", proof: "Un email solo se marca como enviado después de una respuesta exitosa de Gmail." },
+    fr: { title: "## Prospection terminée", processed: "J’ai traité", prospects: "prospects recherchés", sent: "### Envoyés avec succès", none: "Aucun email n’a été envoyé", skipped: "### Ignorés", failed: "### Échecs", proof: "Un email est marqué comme envoyé uniquement après une réponse réussie de Gmail." },
+    en: { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." },
+  }[language as "hi" | "bn" | "es" | "fr" | "en"] || undefined;
+  const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." };
+  const processed = language === "hi" ? `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}` : `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}`;
   const lines = [
-    `## Outreach completed`,
-    `I processed **${sent.length + skipped.length + failed.length}** researched prospects using the connected Gmail account${result?.sender ? ` (${result.sender})` : ""}.`,
+    l.title,
+    `${processed}${result?.sender ? ` (${result.sender})` : ""}.`,
     "",
-    sent.length ? "### Sent successfully" : "### Sent successfully\nNone",
+    sent.length ? l.sent : `${l.sent}\n${l.none}`,
     ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []),
     "",
-    skipped.length ? "### Skipped" : "",
+    skipped.length ? l.skipped : "",
     ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []),
     "",
-    failed.length ? "### Failed" : "",
+    failed.length ? l.failed : "",
     ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []),
     "",
-    "Each sent email was generated inside the outreach tool from the creator research before Gmail was called. No email is reported as sent unless the Gmail send operation returned success."
+    l.proof,
   ].filter(Boolean);
   return lines.join("\n");
 }
@@ -136,9 +159,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
   }
 
   // Explicit send requests are transactional actions, not ordinary chat turns.
-  // Do not let the language model answer "sent" without the send tool actually
-  // running. Reuse the creator table from the immediately preceding research
-  // response when possible.
+  // Provider preflight happens inside the send tool before contact research.
   if (isExplicitSendRequest(userMessage) && userId) {
     const sendTool = getTool("send_proposal_outreach");
     const targets = parseResearchTargets(history);
@@ -155,12 +176,13 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
         targets,
         offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.",
         sender_name: "Sanmine Space",
+        user_language: detectLanguage(userMessage),
       });
     } catch (error) {
       result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
     }
     emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
-    return { response: buildSendSummary(result), events };
+    return { response: buildSendSummary(result, detectLanguage(userMessage)), events };
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
