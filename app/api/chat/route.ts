@@ -21,7 +21,6 @@ async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, mes
   try {
     await ensureChatTables();
     await sql`INSERT INTO users (id, email, name, image) VALUES (${user.uid}, ${user.email ?? `${user.uid}@unknown.local`}, ${user.name ?? null}, ${user.picture ?? null}) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, image = EXCLUDED.image, updated_at = NOW()`;
-
     let chatId = requestedChatId || null;
     if (chatId) {
       const owned = await sql`SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${user.uid} LIMIT 1`;
@@ -31,11 +30,8 @@ async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, mes
       const rows = await sql`INSERT INTO chats (user_id, title) VALUES (${user.uid}, 'New chat') RETURNING id`;
       chatId = String(rows[0].id);
     }
-
     const existingUser = await sql`SELECT id FROM messages WHERE chat_id = ${chatId} AND role = 'user' AND content = ${message} AND created_at > NOW() - INTERVAL '2 minutes' ORDER BY created_at DESC LIMIT 1`;
-    if (!existingUser.length) {
-      await sql`INSERT INTO messages (chat_id, role, content) VALUES (${chatId}, 'user', ${message})`;
-    }
+    if (!existingUser.length) await sql`INSERT INTO messages (chat_id, role, content) VALUES (${chatId}, ${'user'}, ${message})`;
     await sql`UPDATE chats SET title = CASE WHEN title = 'New chat' THEN ${message.slice(0, 120)} ELSE title END, updated_at = NOW() WHERE id = ${chatId} AND user_id = ${user.uid}`;
     return chatId;
   } catch (error) {
@@ -47,7 +43,7 @@ async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, mes
 async function persistAssistant(user: Awaited<ReturnType<typeof getRequestUser>>, chatId: string | null, responseText: string) {
   if (!chatId || !hasDatabaseConfig()) return false;
   try {
-    await sql`INSERT INTO messages (chat_id, role, content) VALUES (${chatId}, 'assistant', ${responseText})`;
+    await sql`INSERT INTO messages (chat_id, role, content) VALUES (${chatId}, ${'assistant'}, ${responseText})`;
     await sql`UPDATE chats SET updated_at = NOW() WHERE id = ${chatId} AND user_id = ${user.uid}`;
     return true;
   } catch (error) {
@@ -58,11 +54,8 @@ async function persistAssistant(user: Awaited<ReturnType<typeof getRequestUser>>
 
 export async function POST(request: Request) {
   let user: Awaited<ReturnType<typeof getRequestUser>>;
-  try {
-    user = await getRequestUser(request);
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Authentication failed.", code: "AUTH_ERROR" }, { status: 401 });
-  }
+  try { user = await getRequestUser(request); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Authentication failed.", code: "AUTH_ERROR" }, { status: 401 }); }
 
   try {
     const body = await request.json();
@@ -79,7 +72,7 @@ export async function POST(request: Request) {
         try {
           if (chatId) send({ type: "chat", chatId });
           send({ type: "status", status: "thinking" });
-          const result = await runAgent(history, message, (event) => send({ type: "event", event }));
+          const result = await runAgent(history, message, (event) => send({ type: "event", event }), user.uid);
           const saved = await persistAssistant(user, chatId, result.response);
           send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events, chatId, persistence: saved ? "saved" : "unavailable" });
           controller.close();
@@ -91,10 +84,7 @@ export async function POST(request: Request) {
         }
       },
     });
-
-    return new Response(stream, {
-      headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" },
-    });
+    return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Something went wrong while processing the chat request." }, { status: 500 });
   }
