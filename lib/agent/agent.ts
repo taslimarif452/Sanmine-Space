@@ -35,6 +35,73 @@ const isYouTubeRequest = (message: string) => /\byoutube\b|\byoutuber(s)?\b|yout
 const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel|channels|subscriber|followers|views/i.test(message);
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
+const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bbhej/i.test(message);
+const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bbhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these/i.test(message);
+
+function stripCell(value: string) {
+  return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
+}
+
+function parseResearchTargets(history: ChatMessage[]) {
+  for (const message of [...history].reverse()) {
+    if (message.role !== "assistant") continue;
+    const lines = message.content.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("|") && line.endsWith("|"));
+    for (let i = 0; i < lines.length - 2; i += 1) {
+      const headers = lines[i].slice(1, -1).split("|").map(stripCell);
+      const separator = lines[i + 1].slice(1, -1).split("|").every((cell) => /^\s*:?-{3,}:?\s*$/.test(cell));
+      if (!separator) continue;
+      const normalizedHeaders = headers.map((header) => header.toLowerCase());
+      const nameIndex = normalizedHeaders.findIndex((header) => /creator|channel|name/.test(header));
+      if (nameIndex < 0) continue;
+      const indexFor = (pattern: RegExp) => normalizedHeaders.findIndex((header) => pattern.test(header));
+      const countryIndex = indexFor(/country|location/);
+      const subscribersIndex = indexFor(/subscriber/);
+      const viewsIndex = indexFor(/total\s*views|views/);
+      const nicheIndex = indexFor(/niche|category|topic/);
+      const channelIndex = indexFor(/channel\s*(url|link)|youtube\s*(url|link)/);
+      const descriptionIndex = indexFor(/description/);
+      const targets = [] as Array<Record<string, string>>;
+      for (const row of lines.slice(i + 2)) {
+        const cells = row.slice(1, -1).split("|").map(stripCell);
+        if (cells.length !== headers.length) break;
+        const name = cells[nameIndex];
+        if (!name || /^[-—]+$/.test(name) || /status|message id/i.test(name)) continue;
+        const target: Record<string, string> = { name };
+        if (countryIndex >= 0) target.country = cells[countryIndex];
+        if (subscribersIndex >= 0) target.subscribers = cells[subscribersIndex];
+        if (viewsIndex >= 0) target.total_views = cells[viewsIndex];
+        if (nicheIndex >= 0) target.niche = cells[nicheIndex];
+        if (channelIndex >= 0) target.channel_url = cells[channelIndex];
+        if (descriptionIndex >= 0) target.description = cells[descriptionIndex];
+        targets.push(target);
+      }
+      if (targets.length) return targets.slice(0, 20);
+    }
+  }
+  return [] as Array<Record<string, string>>;
+}
+
+function buildSendSummary(result: any) {
+  const sent = Array.isArray(result?.sent) ? result.sent : [];
+  const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+  const failed = Array.isArray(result?.failed) ? result.failed : [];
+  const lines = [
+    `## Outreach completed`,
+    `I processed **${sent.length + skipped.length + failed.length}** researched prospects using the connected Gmail account${result?.sender ? ` (${result.sender})` : ""}.`,
+    "",
+    sent.length ? "### Sent successfully" : "### Sent successfully\nNone",
+    ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []),
+    "",
+    skipped.length ? "### Skipped" : "",
+    ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []),
+    "",
+    failed.length ? "### Failed" : "",
+    ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []),
+    "",
+    "Each sent email was generated inside the outreach tool from the creator research before Gmail was called. No email is reported as sent unless the Gmail send operation returned success."
+  ].filter(Boolean);
+  return lines.join("\n");
+}
 
 export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string) {
   const provider = getProvider();
@@ -66,6 +133,34 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     }
     emit({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
+  }
+
+  // Explicit send requests are transactional actions, not ordinary chat turns.
+  // Do not let the language model answer "sent" without the send tool actually
+  // running. Reuse the creator table from the immediately preceding research
+  // response when possible.
+  if (isExplicitSendRequest(userMessage) && userId) {
+    const sendTool = getTool("send_proposal_outreach");
+    const targets = parseResearchTargets(history);
+    if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
+    if (!targets.length) {
+      return { response: "I can send the proposals, but I could not safely recover the creator list from the previous research result. Please run the creator search again, then ask me to send the proposals.", events };
+    }
+
+    emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
+    let result: unknown;
+    try {
+      result = await sendTool.execute({
+        user_id: userId,
+        targets,
+        offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.",
+        sender_name: "Sanmine Space",
+      });
+    } catch (error) {
+      result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
+    }
+    emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
+    return { response: buildSendSummary(result), events };
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
