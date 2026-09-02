@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const ChatRequestSchema = z.object({
+  message: z.string().trim().min(1).max(20_000),
+  history: z.array(z.object({ role: z.enum(["user", "assistant", "system"]), content: z.string().max(50_000) })).max(100).default([]),
+  chatId: z.string().uuid().nullable().optional(),
+});
+
 export const CreateCampaignSchema = z.object({
   name: z.string().trim().min(1).max(120),
   connectionId: z.string().uuid(),
