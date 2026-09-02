@@ -19,6 +19,31 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function detectLanguage(text: string) {
+  if (/[\u0900-\u097F]/.test(text) || /\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text)) return "hi";
+  if (/[\u0980-\u09FF]/.test(text)) return "bn";
+  if (/[\u4E00-\u9FFF]/.test(text)) return "zh";
+  if (/[\u3040-\u30FF]/.test(text)) return "ja";
+  if (/[\uAC00-\uD7AF]/.test(text)) return "ko";
+  if (/\b(quiero|envía|enviar|correo|primero|conecta|conectado|sitio web)\b/i.test(text)) return "es";
+  if (/\b(je veux|envoyer|e-mail|connecte|connecté|site web)\b/i.test(text)) return "fr";
+  return "en";
+}
+
+function connectionMessage(language: string) {
+  const messages: Record<string, string> = {
+    hi: "Proposal bhejne se pehle pehle Plugins page par jaakar Gmail connect karo. Abhi Sanmine Space me Gmail sending active hai; Outlook sending abhi available nahi hai. Connection ke baad mujhe phir se send karne ko bolo, tab main research → personalized proposal → email send workflow chala dunga.",
+    bn: "Proposal পাঠানোর আগে Plugins পেজে গিয়ে Gmail connect করুন। এখন Sanmine Space-এ Gmail sending active; Outlook sending এখনও available নয়। Connect করার পরে আবার send করতে বলুন, তারপর আমি research → personalized proposal → email send workflow চালাব।",
+    es: "Antes de enviar las propuestas, ve a la página Plugins y conecta Gmail. Ahora mismo Sanmine Space tiene activo el envío por Gmail; Outlook todavía no está disponible. Después de conectarlo, vuelve a pedirme que las envíe y ejecutaré el flujo de investigación → propuesta personalizada → envío.",
+    fr: "Avant d'envoyer les propositions, allez dans la page Plugins et connectez Gmail. Pour le moment, l'envoi Gmail est actif dans Sanmine Space ; Outlook n'est pas encore disponible. Après la connexion, demandez-moi à nouveau de les envoyer et j'exécuterai le flux recherche → proposition personnalisée → envoi.",
+    zh: "发送提案前，请先进入 Plugins 页面并连接 Gmail。目前 Sanmine Space 已启用 Gmail 发送，Outlook 发送暂不可用。连接后再次让我发送，我会执行研究 → 个性化提案 → 邮件发送流程。",
+    ja: "提案を送信する前に、Plugins ページで Gmail を接続してください。現在 Sanmine Space では Gmail 送信が有効で、Outlook 送信はまだ利用できません。接続後にもう一度送信を依頼すると、調査 → パーソナライズ提案 → メール送信の流れを実行します。",
+    ko: "제안서를 보내기 전에 Plugins 페이지에서 Gmail을 연결해 주세요. 현재 Sanmine Space에서는 Gmail 전송이 활성화되어 있으며 Outlook 전송은 아직 사용할 수 없습니다. 연결한 후 다시 보내달라고 하면 조사 → 개인화 제안서 → 이메일 전송 흐름을 실행합니다.",
+    en: "Before I can send the proposals, please go to the Plugins page and connect Gmail. Gmail sending is currently active in Sanmine Space; Outlook sending is not available yet. After connecting, ask me to send them again and I will run the research → personalized proposal → email send workflow.",
+  };
+  return messages[language] || messages.en;
+}
+
 function extractBusinessEmails(text: string) {
   const emails = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
   return [...new Set(emails.map((x) => x.toLowerCase()))].filter((email) => {
@@ -63,7 +88,7 @@ async function findContact(name: string) {
 
 export const sendProposalOutreachTool: AgentTool = {
   name: "send_proposal_outreach",
-  description: "For an explicit request to send website/service proposals by email, research public business contact emails for the supplied prospects, personalize a proposal email from the supplied research, and send it through the user's connected Gmail account. Only public business/contact emails are used. Do not use this for drafting-only requests.",
+  description: "For an explicit request to send website/service proposals by email, first verify that a supported email provider is connected. If none is connected, stop before researching contacts and tell the user in the same language to connect Gmail from Plugins. If Gmail is connected, research public business contact emails, personalize each proposal from the supplied research, and send it through Gmail. Never guess an email address. Draft-only requests must not call this tool.",
   parameters: {
     type: "object",
     properties: {
@@ -87,6 +112,7 @@ export const sendProposalOutreachTool: AgentTool = {
       },
       offer: { type: "string", description: "Offer, e.g. a professional website and free demo for review." },
       sender_name: { type: "string", description: "Sender/signature name or brand." },
+      user_language: { type: "string", description: "Language of the user's latest request, used for connection/error messaging." },
     },
     required: ["targets", "offer"],
   },
@@ -95,13 +121,43 @@ export const sendProposalOutreachTool: AgentTool = {
     const targets = Array.isArray(args.targets) ? (args.targets as Target[]).slice(0, 20) : [];
     const offer = clean(args.offer);
     const senderName = clean(args.sender_name) || "Sanmine Space";
+    const language = clean(args.user_language) || "en";
     if (!userId) return { status: "error", message: "Authenticated user context is missing." };
     if (!targets.length) return { status: "error", message: "No prospects were supplied." };
     if (!offer) return { status: "error", message: "An offer is required." };
 
-    const connections = await sql`SELECT id, email FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
-    const connection = connections[0] as { id: string; email: string } | undefined;
-    if (!connection) return { status: "not_connected", message: "Connect Gmail in Plugins before asking me to send proposal emails." };
+    // Provider preflight happens before contact research. This prevents the
+    // agent from doing expensive research and, more importantly, prevents any
+    // implication that an email can be sent when no sending account exists.
+    const connections = await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} ORDER BY updated_at DESC`;
+    const gmail = connections.find((row) => String((row as any).provider) === "google") as { id: string; provider: string; email: string } | undefined;
+    const microsoft = connections.find((row) => String((row as any).provider) === "microsoft") as { id: string; provider: string; email: string } | undefined;
+
+    if (!gmail && !microsoft) {
+      return {
+        status: "needs_connection",
+        sent_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        connected_providers: [],
+        message: connectionMessage(language),
+      };
+    }
+
+    // Outlook records may exist in the schema, but its OAuth/send implementation
+    // is intentionally disabled in the current product. Never pretend it sent.
+    if (!gmail && microsoft) {
+      return {
+        status: "provider_unavailable",
+        sent_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        connected_providers: ["microsoft"],
+        message: language === "hi"
+          ? "Outlook connected hai, lekin Outlook sending abhi Sanmine Space me enabled nahi hai. Plugins me Gmail connect karo, phir proposals send karne ko bolo."
+          : "Outlook is connected, but Outlook sending is not enabled in Sanmine Space yet. Connect Gmail from Plugins, then ask me to send the proposals.",
+      };
+    }
 
     const sent: Array<{ creator: string; email: string; subject: string; message_id: string }> = [];
     const skipped: Array<{ creator: string; reason: string; sources?: { title: string; url: string }[] }> = [];
@@ -137,7 +193,7 @@ export const sendProposalOutreachTool: AgentTool = {
         const subjectMatch = result.text.match(/^Subject:\s*(.+)$/im);
         const subject = subjectMatch?.[1]?.trim() || `Website proposal for ${name}`;
         const body = result.text.replace(/^Subject:\s*.+\n?/im, "").trim();
-        const sentResult = await sendGmailMessage(userId, connection.id, { to: contact.email, subject, body });
+        const sentResult = await sendGmailMessage(userId, gmail.id, { to: contact.email, subject, body });
         sent.push({ creator: name, email: contact.email, subject, message_id: sentResult.id });
       } catch (error) {
         failed.push({ creator: name, reason: error instanceof Error ? error.message : "Unable to send proposal email." });
@@ -146,7 +202,8 @@ export const sendProposalOutreachTool: AgentTool = {
 
     return {
       status: "completed",
-      sender: connection.email,
+      provider: "google",
+      sender: gmail.email,
       sent_count: sent.length,
       skipped_count: skipped.length,
       failed_count: failed.length,
