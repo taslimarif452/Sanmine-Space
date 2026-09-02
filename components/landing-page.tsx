@@ -23,7 +23,8 @@ export function LandingPage({ onLogin, busy, error }: { onLogin: () => void; bus
         </button>
       </header>
 
-      <section className="mx-auto flex min-h-[calc(100vh-88px)] w-full max-w-5xl flex-col items-center justify-center px-6 pb-24 pt-12 text-center md:px-8 md:pt-4">
+      {/* Hero intentionally has no centered website logo. Branding stays in the header/footer. */}
+      <section id="hero" className="mx-auto flex min-h-[calc(100vh-88px)] w-full max-w-5xl flex-col items-center justify-center px-6 pb-24 pt-8 text-center md:px-8 md:pt-2">
         <div className="mb-7 flex items-center gap-2 rounded-full border border-[#dfdcd4] bg-white/55 px-3.5 py-1.5 text-xs text-[#706d66]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#c96f51]" /> AI workspace for research & outreach
         </div>
