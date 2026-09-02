@@ -1,6 +1,6 @@
 import { sql } from "@/lib/db/neon";
 
-const MIGRATION_VERSION = "002_reliable_research";
+const MIGRATION_VERSION = "003_professional_outreach";
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT, image TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
@@ -14,26 +14,15 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS leads (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, email TEXT, website_url TEXT, website_verified BOOLEAN NOT NULL DEFAULT FALSE, website_status INTEGER, website_verified_at TIMESTAMPTZ, website_title TEXT, website_description TEXT, website_final_url TEXT, country TEXT, niche TEXT, youtube_channel_id TEXT, youtube_url TEXT, subscribers BIGINT, total_views BIGINT, contact_confidence NUMERIC(5,2) NOT NULL DEFAULT 0, lead_score NUMERIC(5,2) NOT NULL DEFAULT 0, score_reasons JSONB NOT NULL DEFAULT '[]'::jsonb, normalized_email TEXT, normalized_domain TEXT, normalized_youtube TEXT, first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_researched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
   `CREATE TABLE IF NOT EXISTS research_leads (research_run_id UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE, lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE, rank INTEGER, evidence JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (research_run_id, lead_id))`,
   `CREATE TABLE IF NOT EXISTS research_sources (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), research_run_id UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE, lead_id UUID REFERENCES leads(id) ON DELETE SET NULL, url TEXT NOT NULL, title TEXT, snippet TEXT, source_type TEXT NOT NULL DEFAULT 'web', fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
-  `CREATE INDEX IF NOT EXISTS chats_user_updated_idx ON chats(user_id, updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at ASC)`,
-  `CREATE INDEX IF NOT EXISTS email_connections_user_idx ON email_connections(user_id, updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS email_approvals_user_status_idx ON email_approvals(user_id, status, scheduled_at ASC)`,
-  `CREATE INDEX IF NOT EXISTS email_approvals_campaign_idx ON email_approvals(campaign_id, scheduled_at ASC)`,
-  `CREATE INDEX IF NOT EXISTS email_approvals_sending_idx ON email_approvals(status, sending_started_at)`,
-  `CREATE INDEX IF NOT EXISTS email_approvals_recipient_idx ON email_approvals(user_id, recipient)`,
-  `CREATE INDEX IF NOT EXISTS campaigns_user_status_idx ON campaigns(user_id, status, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS campaign_steps (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, step_order INTEGER NOT NULL CHECK (step_order >= 1), delay_minutes INTEGER NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0), subject TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, step_order))`,
+  `CREATE TABLE IF NOT EXISTS suppression_list (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, email TEXT NOT NULL, reason TEXT NOT NULL DEFAULT 'manual', source TEXT NOT NULL DEFAULT 'user', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(user_id, email))`,
+  `CREATE TABLE IF NOT EXISTS email_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL, approval_id UUID REFERENCES email_approvals(id) ON DELETE SET NULL, recipient TEXT, event_type TEXT NOT NULL CHECK (event_type IN ('sent','delivered','opened','clicked','replied','bounced','failed','unsubscribed')), provider_message_id TEXT, provider_thread_id TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+  `CREATE TABLE IF NOT EXISTS campaign_contacts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, lead_id UUID REFERENCES leads(id) ON DELETE SET NULL, recipient TEXT NOT NULL, current_step INTEGER NOT NULL DEFAULT 1, next_step_at TIMESTAMPTZ, state TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active','replied','bounced','suppressed','completed')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, recipient))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS email_approvals_idempotency_idx ON email_approvals(idempotency_key) WHERE idempotency_key IS NOT NULL`,
-  `CREATE INDEX IF NOT EXISTS research_runs_user_created_idx ON research_runs(user_id, created_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS research_leads_lead_idx ON research_leads(lead_id, created_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS research_sources_run_idx ON research_sources(research_run_id, fetched_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS leads_user_updated_idx ON leads(user_id, updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS leads_user_score_idx ON leads(user_id, lead_score DESC, last_researched_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS leads_user_email_idx ON leads(user_id, normalized_email)`,
-  `CREATE INDEX IF NOT EXISTS leads_user_domain_idx ON leads(user_id, normalized_domain)`,
-  `CREATE INDEX IF NOT EXISTS leads_user_youtube_idx ON leads(user_id, normalized_youtube)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS leads_user_email_unique_idx ON leads(user_id, normalized_email) WHERE normalized_email IS NOT NULL`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS leads_user_domain_unique_idx ON leads(user_id, normalized_domain) WHERE normalized_domain IS NOT NULL`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS leads_user_youtube_unique_idx ON leads(user_id, normalized_youtube) WHERE normalized_youtube IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS email_events_campaign_idx ON email_events(campaign_id, occurred_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS email_events_recipient_idx ON email_events(user_id, recipient, occurred_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS campaign_contacts_due_idx ON campaign_contacts(campaign_id, state, next_step_at)`,
+  `CREATE INDEX IF NOT EXISTS suppression_user_email_idx ON suppression_list(user_id, email)`,
 ];
 
 let migrationPromise: Promise<void> | null = null;
@@ -45,9 +34,6 @@ export function runProductionMigrations() {
     if (existing[0]) return;
     for (const statement of statements) await sql.unsafe(statement);
     await sql`INSERT INTO schema_migrations(version) VALUES (${MIGRATION_VERSION}) ON CONFLICT (version) DO NOTHING`;
-  })().catch((error) => {
-    migrationPromise = null;
-    throw error;
-  });
+  })().catch((error) => { migrationPromise = null; throw error; });
   return migrationPromise;
 }
