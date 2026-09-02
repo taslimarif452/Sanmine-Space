@@ -12,8 +12,8 @@ export async function recoverStaleSending(staleAfterMs = 15 * 60_000) {
   const cutoff = new Date(Date.now() - staleAfterMs);
   const rows = await sql`
     UPDATE email_approvals
-    SET status='failed',
-        error='Recovered stale sending attempt; safe to retry.',
+    SET status='send_unknown',
+        error='The previous send attempt timed out or became stale. Provider delivery is unknown; manual verification is required before retrying.',
         updated_at=NOW()
     WHERE status='sending'
       AND sending_started_at IS NOT NULL
@@ -21,6 +21,11 @@ export async function recoverStaleSending(staleAfterMs = 15 * 60_000) {
     RETURNING id
   `;
   return rows.length;
+}
+
+function isAmbiguousProviderFailure(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return /timeout|timed out|network|fetch failed|socket|econn|5\d\d/.test(message);
 }
 
 export async function sendApproval(id: string, userId: string) {
@@ -37,14 +42,10 @@ export async function sendApproval(id: string, userId: string) {
     WHERE id=${id}
       AND user_id=${userId}
       AND status IN ('approved','failed')
-      AND NOT EXISTS (
-        SELECT 1 FROM email_approvals x
-        WHERE x.id=${id} AND x.status='sent'
-      )
-    RETURNING id, connection_id, recipient, subject, body, provider_message_id
+    RETURNING id, connection_id, recipient, subject, body
   `;
-  const approval = claimed[0] as { id: string; connection_id: string; recipient: string; subject: string; body: string; provider_message_id?: string | null } | undefined;
-  if (!approval) throw new AppError("CONFLICT", "This email is already being sent, already sent, or has not been approved.", 409);
+  const approval = claimed[0] as { id: string; connection_id: string; recipient: string; subject: string; body: string } | undefined;
+  if (!approval) throw new AppError("CONFLICT", "This email is already being sent, already sent, or is not eligible for sending.", 409);
 
   try {
     const result = await sendGmailMessage(userId, String(approval.connection_id), {
@@ -52,18 +53,18 @@ export async function sendApproval(id: string, userId: string) {
       subject: String(approval.subject),
       body: String(approval.body),
     });
-    const finalized = await sql`
-      UPDATE email_approvals
-      SET status='sent', sent_at=COALESCE(sent_at, NOW()), provider_message_id=COALESCE(provider_message_id, ${result.id || null}), sending_started_at=NULL, updated_at=NOW()
-      WHERE id=${id} AND user_id=${userId} AND status='sending'
-      RETURNING id, provider_message_id
-    `;
-    return { ...result, approvalId: id, idempotent: finalized.length === 0 };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Email send failed.";
     await sql`
       UPDATE email_approvals
-      SET status='failed', error=${message}, sending_started_at=NULL, updated_at=NOW()
+      SET status='sent', sent_at=COALESCE(sent_at, NOW()), provider_message_id=${result.id || null}, sending_started_at=NULL, updated_at=NOW()
+      WHERE id=${id} AND user_id=${userId} AND status='sending'
+    `;
+    return { ...result, approvalId: id, idempotencyKey };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Email send failed.";
+    const status = isAmbiguousProviderFailure(error) ? "send_unknown" : "failed";
+    await sql`
+      UPDATE email_approvals
+      SET status=${status}, error=${message}, sending_started_at=NULL, updated_at=NOW()
       WHERE id=${id} AND user_id=${userId} AND status='sending'
     `;
     throw error;
