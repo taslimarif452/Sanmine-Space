@@ -15,7 +15,9 @@ TOOL ROUTING — IMPORTANT:
 - If youtube_search returns an API error, clearly report the actual API error and do not silently fall back to random websites.
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
-- For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email. If the user asks for both, you may use both tools.
+- For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
+- IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, do not stop at drafting. Use send_proposal_outreach. That tool researches public business/contact emails, personalizes the proposal from the supplied YouTube/web research, and sends through the user's connected Gmail. Only public business/contact emails may be used; never guess an email address. If no public business email is found, skip that prospect and report it.
+- If the user only asks to draft/write a proposal or email, do NOT send it.
 
 RESPONSE FORMAT:
 - Write normal answers in clean Markdown with headings, short paragraphs, bullets, and numbered lists where useful.
@@ -34,7 +36,7 @@ const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
 
-export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void) {
+export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string) {
   const provider = getProvider();
   const tools = getToolDefinitions();
   const events: AgentEvent[] = [];
@@ -47,13 +49,9 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
 
   emit({ type: "thinking" });
 
-  // Deterministic YouTube routing: creator/channel/video requests must hit the
-  // YouTube Data API v3 tool before the general model can choose web search.
   if (isYouTubeRequest(userMessage)) {
     const youtube = getTool("youtube_search");
-    if (!youtube) {
-      return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
-    }
+    if (!youtube) return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
     emit({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
     let result: unknown;
     try {
@@ -67,22 +65,15 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." };
     }
     emit({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
-    messages.push({
-      role: "user",
-      content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}`,
-    });
+    messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const response = await provider.chat(messages, tools);
-    if (!response.toolCalls.length) {
-      return { response: response.text || "I’m ready. What would you like me to do?", events };
-    }
+    if (!response.toolCalls.length) return { response: response.text || "I’m ready. What would you like me to do?", events };
 
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
-      // Avoid a duplicate YouTube call after deterministic routing unless the
-      // model explicitly needs a genuinely different YouTube query.
       if (isYouTubeRequest(userMessage) && call.name === "youtube_search") {
         messages.push({ role: "user", content: "The YouTube Data API v3 search has already been executed. Use that authoritative result to answer the user; do not call youtube_search again." });
         continue;
@@ -91,8 +82,14 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       let result: unknown;
       if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
       else {
-        try { result = await tool.execute(call.arguments); }
-        catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; }
+        try {
+          const argumentsForTool = call.name === "send_proposal_outreach" && userId
+            ? { ...call.arguments, user_id: userId }
+            : call.arguments;
+          result = await tool.execute(argumentsForTool);
+        } catch (error) {
+          result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." };
+        }
       }
       emit({ type: "tool_result", name: call.name, toolCallId: call.id, result });
       if (response.text) messages.push({ role: "assistant", content: response.text });
