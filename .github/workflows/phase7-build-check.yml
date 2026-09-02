@@ -18,9 +18,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      # The repository is intentionally pinned in package.json; until the first
-      # committed lockfile is generated, npm install is used instead of npm ci.
       - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run typecheck
