@@ -3,23 +3,19 @@ import { runAgent } from "@/lib/agent/agent";
 import type { ChatMessage } from "@/lib/ai/provider";
 import { getRequestUser } from "@/lib/auth/request-user";
 import { hasDatabaseConfig, sql } from "@/lib/db/neon";
+import { runProductionMigrations } from "@/lib/db/migrations";
+import { ChatRequestSchema } from "@/lib/api/schemas";
+import { AppError, errorResponse, errorStatus } from "@/lib/api/errors";
+import { enforceRateLimit } from "@/lib/api/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function ensureChatTables() {
-  await sql`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT, image TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-  await sql`CREATE TABLE IF NOT EXISTS chats (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT 'New chat', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-  await sql`CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE, role TEXT NOT NULL CHECK (role IN ('user','assistant')), content TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-  await sql`CREATE INDEX IF NOT EXISTS chats_user_updated_idx ON chats(user_id, updated_at DESC)`;
-  await sql`CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at ASC)`;
-}
-
 async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, requestedChatId?: string | null) {
   if (!hasDatabaseConfig()) return null;
   try {
-    await ensureChatTables();
+    await runProductionMigrations();
     await sql`INSERT INTO users (id, email, name, image) VALUES (${user.uid}, ${user.email ?? `${user.uid}@unknown.local`}, ${user.name ?? null}, ${user.picture ?? null}) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, image = EXCLUDED.image, updated_at = NOW()`;
     let chatId = requestedChatId || null;
     if (chatId) {
@@ -58,11 +54,13 @@ export async function POST(request: Request) {
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Authentication failed.", code: "AUTH_ERROR" }, { status: 401 }); }
 
   try {
-    const body = await request.json();
-    const message = typeof body.message === "string" ? body.message.trim() : "";
-    const history = Array.isArray(body.history) ? (body.history as ChatMessage[]) : [];
-    const requestedChatId = typeof body.chatId === "string" && body.chatId ? body.chatId : null;
-    if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
+    if (!hasDatabaseConfig()) throw new AppError("CONFIG_ERROR", "Database persistence is not configured.", 503);
+    await runProductionMigrations();
+    await enforceRateLimit(`chat:${user.uid}`, 30, 60_000);
+    const parsed = ChatRequestSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) throw new AppError("VALIDATION_ERROR", parsed.error.issues[0]?.message || "Invalid chat request.", 400);
+    const { message, history, chatId: requestedChatId } = parsed.data;
+    const chatHistory = history as ChatMessage[];
 
     const chatId = await prepareChat(user, message, requestedChatId);
     const encoder = new TextEncoder();
@@ -72,7 +70,7 @@ export async function POST(request: Request) {
         try {
           if (chatId) send({ type: "chat", chatId });
           send({ type: "status", status: "thinking" });
-          const result = await runAgent(history, message, (event) => send({ type: "event", event }), user.uid);
+          const result = await runAgent(chatHistory, message, (event) => send({ type: "event", event }), user.uid);
           const saved = await persistAssistant(user, chatId, result.response);
           send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events, chatId, persistence: saved ? "saved" : "unavailable" });
           controller.close();
@@ -86,6 +84,6 @@ export async function POST(request: Request) {
     });
     return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Something went wrong while processing the chat request." }, { status: 500 });
+    return NextResponse.json(errorResponse(error, "Something went wrong while processing the chat request."), { status: errorStatus(error) });
   }
 }
