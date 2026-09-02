@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         INSERT INTO email_approvals (user_id, connection_id, campaign_id, recipient, subject, body, scheduled_at, idempotency_key)
         SELECT ${user.uid}, ${connectionId}, campaign.id, r.recipient, ${subject}, ${body},
           campaign.start_at + ((r.ordinality - 1) * campaign.interval_minutes) * INTERVAL '1 minute',
-          encode(digest(campaign.id::text || ':' || r.recipient, 'sha256'), 'hex')
+          md5(campaign.id::text || ':' || r.recipient)
         FROM campaign CROSS JOIN unnest(${uniqueRecipients}::text[]) WITH ORDINALITY AS r(recipient, ordinality)
         RETURNING id
       )
