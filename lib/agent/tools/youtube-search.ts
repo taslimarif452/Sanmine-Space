@@ -13,6 +13,22 @@ type YouTubeItem = {
   };
 };
 
+type YouTubeChannel = {
+  id?: string;
+  snippet?: {
+    title?: string;
+    description?: string;
+    publishedAt?: string;
+    country?: string;
+    customUrl?: string;
+  };
+  statistics?: {
+    subscriberCount?: string;
+    videoCount?: string;
+    viewCount?: string;
+  };
+};
+
 const WEBSITE_URL_RE = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/gi;
 const SOCIAL_HOSTS = new Set([
   "youtube.com",
@@ -158,7 +174,8 @@ export const youtubeSearchTool: AgentTool = {
       throw new Error(`${statsData?.error?.message || `YouTube channel lookup failed (${statsResponse.status}).`}${reason ? ` [${reason}]` : ""}`);
     }
 
-    const channels = (Array.isArray(statsData.items) ? statsData.items : []).map((channel: any) => {
+    const channels: YouTubeChannel[] = Array.isArray(statsData.items) ? statsData.items : [];
+    const channelResults = channels.map((channel) => {
       const description = String(channel.snippet?.description || "");
       const externalWebsite = hasExternalWebsite(description);
       return {
@@ -171,15 +188,14 @@ export const youtubeSearchTool: AgentTool = {
         subscribers: channel.statistics?.subscriberCount,
         videos: channel.statistics?.videoCount,
         total_views: channel.statistics?.viewCount,
-        url: `https://www.youtube.com/channel/${channel.id}`,
-        thumbnail: channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.default?.url,
+        url: channel.id ? `https://www.youtube.com/channel/${channel.id}` : undefined,
         website_in_channel_description: externalWebsite,
       };
     });
 
     const filtered = filterNoWebsite
-      ? channels.filter((channel) => !channel.website_in_channel_description).slice(0, requestedLimit)
-      : channels.slice(0, requestedLimit);
+      ? channelResults.filter((channel) => !channel.website_in_channel_description).slice(0, requestedLimit)
+      : channelResults.slice(0, requestedLimit);
 
     return {
       status: "success",
@@ -188,7 +204,7 @@ export const youtubeSearchTool: AgentTool = {
       requested_query: rawQuery,
       type: "creator",
       region_code: region || undefined,
-      candidate_count: channels.length,
+      candidate_count: channelResults.length,
       results: filtered,
       website_filter: filterNoWebsite
         ? "Excluded channels whose public YouTube channel description contains an external website URL. Social-only links were not treated as a website."
