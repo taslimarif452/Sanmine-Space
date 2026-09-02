@@ -1,0 +1,10 @@
+import { NextResponse } from "next/server";
+import { getRequestUser } from "@/lib/auth/request-user";
+import { sql } from "@/lib/db/neon";
+import { runProductionMigrations } from "@/lib/db/migrations";
+import { generateAI } from "@/lib/intelligence/lead-intelligence";
+import { AppError, errorResponse, errorStatus } from "@/lib/api/errors";
+import { enforceRateLimit } from "@/lib/api/rate-limit";
+import { z } from "zod";
+const Body=z.object({offer:z.string().trim().min(1).max(5000)});
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){try{const user=await getRequestUser(request);await runProductionMigrations();await enforceRateLimit(`lead:demo:${user.uid}`,20,60_000);const {id}=await params;const parsed=Body.safeParse(await request.json().catch(()=>null));if(!parsed.success)throw new AppError("VALIDATION_ERROR","Offer is required.",400);const rows=await sql`SELECT * FROM leads WHERE id=${id} AND user_id=${user.uid} LIMIT 1`;const lead=rows[0] as any;if(!lead)throw new AppError("NOT_FOUND","Lead not found.",404);const audit=(await sql`SELECT findings FROM website_audits WHERE lead_id=${id} AND user_id=${user.uid} ORDER BY created_at DESC LIMIT 1`)[0] as any;const prompt=`Create an AI-generated demo brief for a web developer building a prototype for this lead. Include: concept, page structure, hero CTA, visual direction, 3-5 sections, and the highest-priority fixes. Base priorities only on supplied evidence. Lead: ${JSON.stringify({name:lead.name,niche:lead.niche,youtube_url:lead.youtube_url,website_url:lead.website_url})}. Website audit: ${JSON.stringify(audit?.findings||{})}. Offer: ${parsed.data.offer}`;const brief=await generateAI(prompt);const title=`Demo brief — ${lead.name}`;const saved=await sql`INSERT INTO demo_briefs(user_id,lead_id,title,brief) VALUES(${user.uid},${id},${title},${brief}) RETURNING *`;return NextResponse.json({brief:saved[0]},{status:201});}catch(error){return NextResponse.json(errorResponse(error,"Unable to generate demo brief."),{status:errorStatus(error)});}}
