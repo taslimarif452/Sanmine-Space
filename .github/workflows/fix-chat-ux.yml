@@ -10,62 +10,81 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Patch chat UX and agent response quality
+      - name: Fix live agent activity and natural response streaming
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
 
-          # Agent: make tool selection explicit and forbid raw/internal tool payloads.
-          p = Path('lib/agent/agent.ts')
-          s = p.read_text()
-          marker = 'If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.`;'
-          replacement = '''If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.
-
-TOOL TEST MODE:
-- If the user asks to test, verify, inspect, or demonstrate the available tools/capabilities, do not answer with a generic readiness message.
-- Use the capability tool and the relevant read-only tools that can safely be exercised for the user's request (web search, page opening, website analysis, YouTube lookup when applicable, lead research, proposal/email generation). Report which tools actually ran and the result of each.
-- Never claim that a tool ran unless its tool_start/tool_result confirms it.
-- Never execute an external side-effecting send action merely because the user asks to "test all tools". A send action requires a clear explicit send request and an appropriate recipient/target.
-- If a tool cannot be safely exercised without missing required input, report it as "not tested — required input missing" rather than inventing input or pretending success.
-
-OUTPUT SAFETY:
-- Never print raw tool payloads, internal event objects, function-call JSON, SVG source, or fields such as svgSources/tool_result/functionCall/functionResponse.
-- Never dump duplicate raw URLs. Turn research into a normal human-readable answer and let the chat UI render source cards from tool events.
-- If tools return useful data, synthesize it into the answer. Never replace a useful answer with "I'm ready" or "What would you like me to do?" after tools have run.`;'''
-          if marker not in s:
-              raise SystemExit('agent system prompt marker not found')
-          s = s.replace(marker, replacement, 1)
-          # Make explicit research detection include test/verify language without changing normal chat behavior.
-          old = r'''const isWebResearchRequest = (message: string) => /\\bresearch\\b|\\bcheck\\b|\\bsearch\\b|\\bfind\\b|\\blook\\s*up\\b|\\bdetails?\\b|\\bavailable\\b|\\bavailability\\b|\\bdomain\\b|\\bwebsite\\b|\\bsite\\b|\\bgo\\s*dad(?:d?y)?\\b|\\bextract\\b|\\bnikal(?:o|na|ke)?\\b|\\bdekho\\b|\\bdekh\\s*kar\\b|\\bcurrent\\b|\\blatest\\b/i.test(message);'''
-          # The file stores literal backslashes; use a direct substring fallback if regex escaping differs.
-          if old not in s:
-              old2 = 'const isWebResearchRequest = (message: string) => /\\bresearch\\b|\\bcheck\\b|\\bsearch\\b|\\bfind\\b|\\blook\\s*up\\b|\\bdetails?\\b|\\bavailable\\b|\\bavailability\\b|\\bdomain\\b|\\bwebsite\\b|\\bsite\\b|\\bgo\\s*dad(?:d?y)?\\b|\\bextract\\b|\\bnikal(?:o|na|ke)?\\b|\\bdekho\\b|\\bdekh\\s*kar\\b|\\bcurrent\\b|\\blatest\\b/i.test(message);'
-              old = old2
-          if old in s:
-              s = s.replace(old, old.replace('|\\bcurrent\\b|\\blatest\\b/i', '|\\bcurrent\\b|\\blatest\\b|\\btest\\b|\\btesting\\b|\\bverify\\b|\\btools?\\b|\\bcapabilit(?:y|ies)\\b/i'), 1)
-          p.write_text(s)
-
-          # Frontend: compact, familiar progress indicator and single-column source cards.
           p = Path('app/page.tsx')
           s = p.read_text()
+
+          # Keep the existing UI status labels, but don't hide completed activity on desktop.
+          s = s.replace('steps.slice(-3,-1)', 'steps.slice(-5)')
+
+          # Show activity immediately, before the first model token arrives, without a card/div.
           old = '{loading&&status&&<div className="flex items-center gap-3 px-1 text-sm text-[var(--muted)]"><span>{label(status)} <Loader2 size={14} className="inline animate-spin"/></span></div>}'
-          new = '{loading&&status&&<div className="flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><span className="inline-flex gap-0.5" aria-hidden="true"><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.2s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.1s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current"/></span></span></div>}'
+          if old in s:
+              new = '{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
+              s = s.replace(old, new, 1)
+          else:
+              # If the previous compact progress patch changed the exact markup, replace its loading block too.
+              pattern = r'\{loading&&status&&<div className="flex items-center gap-2 px-1 text-sm text-\[var\(--muted\)\]">.*?</div>\}'
+              repl = '{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
+              s, n = re.subn(pattern, repl, s, count=1, flags=re.S)
+              if n == 0:
+                  raise SystemExit('Could not locate the chat progress JSX')
+
+          # The current stream renders each provider delta immediately. Keep the network stream real,
+          # but reveal the accumulated answer progressively so large responses don't appear all at once.
+          old = 'let answer="",streamed="",events:Event[]=[],id=chatId;'
+          new = 'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;'
           if old not in s:
-              raise SystemExit('progress JSX marker not found')
+              raise SystemExit('stream state marker not found')
           s = s.replace(old, new, 1)
-          s = s.replace('<div className="grid gap-2 sm:grid-cols-2">{sources.map(s=><a', '<div className="grid gap-2">{sources.map(s=><a', 1)
-          # Remove the temporary active workflow after committing the real changes.
+
+          old = 'if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");setMsgs([...base,{role:"assistant",content:streamed}]);}'
+          new = '''if(d.type==="delta"&&d.delta){
+            streamed+=d.delta;
+            setStatus("Writing answer");
+            if(!typeTimer){
+              typeTimer=setInterval(()=>{
+                if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+                const next=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
+                displayed=next;
+                setMsgs([...base,{role:"assistant",content:displayed}]);
+              },30);
+            }
+          }'''
+          if old not in s:
+              raise SystemExit('delta streaming marker not found')
+          s = s.replace(old, new, 1)
+
+          # Flush the typewriter before the final persisted message, then clear its timer on completion/error.
+          old = 'if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'
+          new = '''if(typeTimer){clearInterval(typeTimer);typeTimer=null;}
+          displayed=streamed;
+          if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'''
+          if old not in s:
+              raise SystemExit('stream completion marker not found')
+          s = s.replace(old, new, 1)
+
+          old = 'finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
+          new = 'finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
+          if old not in s:
+              raise SystemExit('stream finally marker not found')
+          s = s.replace(old, new, 1)
+
           p.write_text(s)
           PY
       - name: Commit fixes and remove temporary workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/page.tsx lib/agent/agent.ts
+          git add app/page.tsx
           git diff --cached --quiet && { echo "No patch changes"; exit 1; }
-          git commit -m "fix: improve agent tool testing and chat UX"
+          git commit -m "fix: restore live agent activity and natural streaming"
           git push
           git rm .github/workflows/fix-chat-ux.yml
           git commit -m "chore: remove temporary chat UX repair workflow"
