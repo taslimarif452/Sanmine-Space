@@ -19,7 +19,7 @@ export type ToolResult = {
 };
 
 export type AgentEvent =
-  | { type: "thinking" }
+  | { type: "thinking"; name?: string; toolCallId?: string }
   | { type: "tool_start"; name: string; toolCallId: string }
   | { type: "tool_result"; name: string; toolCallId: string; result: unknown };
 
