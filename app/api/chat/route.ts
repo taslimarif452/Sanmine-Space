@@ -86,7 +86,6 @@ export async function POST(request: Request) {
             chatHistory,
             message,
             (event) => {
-              if (event.type === "thinking") return;
               send({ type: "event", event });
             },
             user.uid,

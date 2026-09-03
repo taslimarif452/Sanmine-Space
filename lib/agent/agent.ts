@@ -134,6 +134,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
   const events: AgentEvent[] = [];
   const emit = (event: AgentEvent) => { events.push(event); onEvent?.(event); };
   const streamText = (delta: string) => { if (delta) onText?.(delta); };
+  const emitThinking = () => emit({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history.slice(-12),
@@ -180,11 +181,13 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     }
     emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
     const response = buildSendSummary(result, detectLanguage(userMessage));
-    streamText(response);
+    emitThinking();
+    for (let i = 0; i < response.length; i += 18) streamText(response.slice(i, i + 18));
     return { response, events };
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    emitThinking();
     const response = await provider.chatStream(messages, tools, streamText);
     if (!response.toolCalls.length) return { response: response.text || "I’m ready. What would you like me to do?", events };
 
