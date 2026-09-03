@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAgent } from "@/lib/agent/agent";
 import type { ChatMessage } from "@/lib/ai/provider";
+import type { AgentEvent } from "@/lib/agent/tools/types";
 import { getRequestUser } from "@/lib/auth/request-user";
 import { hasDatabaseConfig, sql } from "@/lib/db/neon";
 import { runProductionMigrations } from "@/lib/db/migrations";
@@ -14,6 +15,38 @@ export const maxDuration = 300;
 
 const isSimpleGreeting = (message: string) =>
   /^(hi|hello|hey|hii|hiii|helo|hola|namaste|good\s+(morning|afternoon|evening|night))\s*[!.?]*$/i.test(message.trim());
+
+function isLowQualityAnswer(text: string) {
+  const value = text.trim();
+  if (!value) return true;
+  if (/^i[’']m ready\. what would you like me to do\??$/i.test(value)) return true;
+  if (/^i'?m ready\. what would you like me to do\??$/i.test(value)) return true;
+  if (/svgSources|<svg|\[svg\]|tool_result|raw tool|functionCall|functionResponse/i.test(value)) return true;
+  return false;
+}
+
+function buildResearchFallback(events: AgentEvent[], userMessage: string) {
+  const results: Array<{ title: string; url: string; snippet?: string }> = [];
+  const statuses: string[] = [];
+  for (const event of events) {
+    if (event.type !== "tool_result") continue;
+    const result = event.result as any;
+    if (!result || typeof result !== "object") continue;
+    if (result.status && result.status !== "success") statuses.push(`${event.name}: ${String(result.message || result.status)}`);
+    if (Array.isArray(result.results)) {
+      for (const item of result.results) {
+        if (item?.url) results.push({ title: String(item.title || "Web source"), url: String(item.url), snippet: item.snippet ? String(item.snippet) : undefined });
+      }
+    }
+    if (result.url) results.push({ title: String(result.title || result.url), url: String(result.url), snippet: typeof result.text === "string" ? result.text.slice(0, 220) : undefined });
+  }
+  const unique = [...new Map(results.map((item) => [item.url, item])).values()].slice(0, 8);
+  if (!unique.length && statuses.length) {
+    return `I couldn’t complete the requested research because a required tool is unavailable.\n\n${statuses.map((s) => `- ${s}`).join("\n")}`;
+  }
+  if (!unique.length) return `I started the requested research for **${userMessage.slice(0, 100)}**, but the research tools did not return usable source data. Please try the request again.`;
+  return `## Research results\n\nI completed the web research and found **${unique.length} source${unique.length === 1 ? "" : "s"}**.\n\n${unique.map((item, index) => `${index + 1}. **${item.title}**\n   ${item.url}${item.snippet ? `\n   ${item.snippet.replace(/\s+/g, " ").slice(0, 220)}` : ""}`).join("\n\n")}`;
+}
 
 async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, requestedChatId?: string | null) {
   if (!hasDatabaseConfig()) return null;
@@ -68,8 +101,6 @@ export async function POST(request: Request) {
       async start(controller) {
         const send = (payload: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
         try {
-          // Emit progress before migrations, rate limiting, or chat persistence so the
-          // browser receives a visible status as soon as the request stream starts.
           send({ type: "event", event: { type: "thinking", name: "request_start", toolCallId: `request-${Date.now()}` } });
           await runProductionMigrations();
           await enforceRateLimit(`chat:${user.uid}`, 30, 60_000);
@@ -88,14 +119,13 @@ export async function POST(request: Request) {
           const result = await runAgent(
             chatHistory,
             message,
-            (event) => {
-              send({ type: "event", event });
-            },
+            (event) => send({ type: "event", event }),
             user.uid,
             (delta) => send({ type: "delta", delta }),
           );
-          const saved = await persistAssistant(user, chatId, result.response);
-          send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events.filter((event) => event.type !== "thinking"), chatId, persistence: saved ? "saved" : "unavailable" });
+          const responseText = isLowQualityAnswer(result.response) ? buildResearchFallback(result.events, message) : result.response.trim();
+          const saved = await persistAssistant(user, chatId, responseText);
+          send({ type: "done", response: responseText, events: result.events.filter((event) => event.type !== "thinking"), chatId, persistence: saved ? "saved" : "unavailable" });
           controller.close();
         } catch (error) {
           const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
