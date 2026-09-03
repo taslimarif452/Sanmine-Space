@@ -2,7 +2,6 @@ import type { ToolCall, ToolDefinition } from "@/lib/agent/tools/types";
 
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 export type AIProviderName = "gemini" | "openrouter";
-export type ProviderTask = "fast" | "balanced" | "deep";
 export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unknown };
 export interface AIProvider {
   chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse>;
