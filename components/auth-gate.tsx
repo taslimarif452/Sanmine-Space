@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { getFirebaseAuth, signInWithGoogle } from "@/lib/auth/firebase-client";
 import { PremiumLanding } from "@/components/premium-landing";
 import { PricingPortal } from "@/components/pricing-portal";
+import { CookieConsent } from "@/components/cookie-consent";
 
 const AuthUserContext=createContext<User|null>(null);
 export function useAuthUser(){return useContext(AuthUserContext)}
@@ -26,7 +27,7 @@ type LoginProps={error:string;busy:boolean;setBusy:(v:boolean)=>void;setError:(v
 function LandingLogin({error,busy,setBusy,setError,pathname}:LoginProps){
   const login=async()=>{setBusy(true);setError("");try{await signInWithGoogle()}catch(e){setError(e instanceof Error?e.message:"Google sign-in failed.")}finally{setBusy(false)}};
   const logo="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
-  if(pathname==="/")return <><PremiumLanding onLogin={login} busy={busy} error={error}/><PricingPortal/></>;
+  if(pathname==="/")return <><PremiumLanding onLogin={login} busy={busy} error={error}/><PricingPortal/><CookieConsent/></>;
   const titles:{[key:string]:string}={"/privacy":"Privacy Policy","/terms":"Terms & Conditions","/about":"About Sanmine Space","/contact":"Contact"};
   return <main className="min-h-screen bg-[var(--bg)] text-[var(--text)]"><header className="mx-auto flex max-w-6xl items-center justify-between border-b border-[#e5e1d9] px-5 py-5 md:px-8"><a href="/" className="flex items-center gap-2.5"><img src={logo} alt="Sanmine Space" className="h-8 w-8 rounded-lg"/><span className="font-serif text-xl tracking-[-.035em]">Sanmine Space</span></a><a href="/" className="rounded-xl border border-[#d8d5cd] bg-white px-4 py-2 text-sm font-medium shadow-sm">Home</a></header><article className="mx-auto max-w-3xl px-5 py-16 md:px-8 md:py-24"><p className="text-[11px] font-semibold uppercase tracking-[.2em] text-[var(--muted)]">Sanmine Space</p><h1 className="mt-4 font-serif text-5xl tracking-[-.045em]">{titles[pathname]||"Sanmine Space"}</h1>{pathname==="/privacy"?<Privacy/>:pathname==="/terms"?<Terms/>:pathname==="/about"?<About/>:<Contact/>}</article></main>;
 }
