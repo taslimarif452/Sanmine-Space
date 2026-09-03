@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAgent } from "@/lib/agent/agent";
 import { withProviderTask } from "@/lib/ai/request-context";
-import { claimBackgroundJob, completeBackgroundJob, ensureProductionSchema, recordProviderResult } from "@/lib/agent/production";
+import { claimBackgroundJob, completeBackgroundJob, ensureProductionSchema, recordProviderResult, recoveryDelay } from "@/lib/agent/production";
 import { hasDatabaseConfig, sql } from "@/lib/db/neon";
 
 export const runtime = "nodejs";
@@ -35,7 +35,8 @@ export async function GET(request: Request) {
       const message = error instanceof Error ? error.message : "Background research failed.";
       const exhausted = Number(job.attempts) >= Number(job.max_attempts);
       if (hasDatabaseConfig() && runId) await sql`UPDATE agent_runs SET status=${exhausted ? "failed" : "running"},error=${message},completed_at=${exhausted ? new Date() : null} WHERE id=${runId}`;
-      await completeBackgroundJob(String(job.id), exhausted, message);
+      if (hasDatabaseConfig() && !exhausted) await sql`UPDATE background_jobs SET status='queued',available_at=NOW()+(${recoveryDelay(Number(job.attempts))} * INTERVAL '1 millisecond'),locked_at=NULL,error=${message} WHERE id=${String(job.id)}`;
+      else await completeBackgroundJob(String(job.id), true, message);
       await recordProviderResult(provider, false, Date.now() - started, message);
       return NextResponse.json({ status: exhausted ? "failed" : "retrying", jobId: job.id, runId, error: message }, { status: exhausted ? 500 : 202 });
     }
