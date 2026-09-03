@@ -10,7 +10,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Fix live agent activity and natural response streaming
+      - name: Patch chat live progress and streaming
         shell: bash
         run: |
           python - <<'PY'
@@ -20,61 +20,60 @@ jobs:
           p = Path('app/page.tsx')
           s = p.read_text()
 
-          # Keep the existing UI status labels, but don't hide completed activity on desktop.
-          s = s.replace('steps.slice(-3,-1)', 'steps.slice(-5)')
+          # 1) Make the activity labels available immediately and keep the completed trail visible.
+          # Replace the existing loading/status block regardless of the exact compacted spacing.
+          progress_re = re.compile(r'\{loading&&status&&<div className="flex items-center gap-[^"]+"[^>]*>.*?</div>\}', re.S)
+          progress_new = '{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
+          s, n = progress_re.subn(progress_new, s, count=1)
+          if n == 0:
+              # If no old loading block exists, inject a small fragment directly after the main element.
+              marker = 'return <main className="relative flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">'
+              if marker not in s:
+                  raise SystemExit('chat main marker not found')
+              injected = marker + '{loading&&status&&<><span className="pointer-events-none fixed bottom-28 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="pointer-events-none fixed bottom-28 z-40 ml-3 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
+              s = s.replace(marker, injected, 1)
 
-          # Show activity immediately, before the first model token arrives, without a card/div.
-          old = '{loading&&status&&<div className="flex items-center gap-3 px-1 text-sm text-[var(--muted)]"><span>{label(status)} <Loader2 size={14} className="inline animate-spin"/></span></div>}'
-          if old in s:
-              new = '{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
-              s = s.replace(old, new, 1)
-          else:
-              # If the previous compact progress patch changed the exact markup, replace its loading block too.
-              pattern = r'\{loading&&status&&<div className="flex items-center gap-2 px-1 text-sm text-\[var\(--muted\)\]">.*?</div>\}'
-              repl = '{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
-              s, n = re.subn(pattern, repl, s, count=1, flags=re.S)
-              if n == 0:
-                  raise SystemExit('Could not locate the chat progress JSX')
-
-          # The current stream renders each provider delta immediately. Keep the network stream real,
-          # but reveal the accumulated answer progressively so large responses don't appear all at once.
-          old = 'let answer="",streamed="",events:Event[]=[],id=chatId;'
-          new = 'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;'
-          if old not in s:
+          # 2) The provider can deliver a large delta at once. Preserve the true stream but reveal it
+          # progressively in the UI instead of replacing the whole answer in a single frame.
+          if 'let answer="",streamed="",events:Event[]=[],id=chatId;' in s:
+              s = s.replace('let answer="",streamed="",events:Event[]=[],id=chatId;', 'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;', 1)
+          elif 'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId;' not in s:
               raise SystemExit('stream state marker not found')
-          s = s.replace(old, new, 1)
 
-          old = 'if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");setMsgs([...base,{role:"assistant",content:streamed}]);}'
-          new = '''if(d.type==="delta"&&d.delta){
+          delta_re = re.compile(r'if\(d\.type==="delta"&&d\.delta\)\{.*?\}', re.S)
+          delta_new = '''if(d.type==="delta"&&d.delta){
             streamed+=d.delta;
             setStatus("Writing answer");
             if(!typeTimer){
               typeTimer=setInterval(()=>{
                 if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
-                const next=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
-                displayed=next;
+                displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
                 setMsgs([...base,{role:"assistant",content:displayed}]);
               },30);
             }
           }'''
-          if old not in s:
-              raise SystemExit('delta streaming marker not found')
-          s = s.replace(old, new, 1)
+          s, n = delta_re.subn(delta_new, s, count=1)
+          if n == 0:
+              raise SystemExit('delta handler not found')
 
-          # Flush the typewriter before the final persisted message, then clear its timer on completion/error.
-          old = 'if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'
-          new = '''if(typeTimer){clearInterval(typeTimer);typeTimer=null;}
-          displayed=streamed;
-          if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'''
-          if old not in s:
-              raise SystemExit('stream completion marker not found')
-          s = s.replace(old, new, 1)
+          completion = 'if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'
+          if completion in s:
+              s = s.replace(completion, 'if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");', 1)
+          else:
+              raise SystemExit('completion marker not found')
 
-          old = 'finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
-          new = 'finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
-          if old not in s:
-              raise SystemExit('stream finally marker not found')
-          s = s.replace(old, new, 1)
+          finally_old = 'finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
+          finally_new = 'finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
+          if finally_old in s:
+              s = s.replace(finally_old, finally_new, 1)
+          elif finally_new not in s:
+              raise SystemExit('finally marker not found')
+
+          # Keep sources compact: text + favicon only.
+          s = s.replace('className="group flex min-w-0 items-center gap-3 rounded-xl border border-[#e5e1d8] bg-[#faf9f6] px-3 py-2.5 transition hover:bg-white hover:shadow-sm"', 'className="group flex min-w-0 items-center gap-2 px-0 py-1 transition"', 1)
+          s = s.replace('className="h-7 w-7 shrink-0 rounded-md"', 'className="h-5 w-5 shrink-0 rounded-sm"', 1)
+          s = s.replace('<ExternalLink size={14} className="shrink-0 text-[#aaa69e] transition group-hover:text-[#5f5b54]"/>', '', 1)
+          s = s.replace('{s.snippet&&<span className="mt-1 block line-clamp-1 text-[11px] leading-4 text-[#77736b]">{s.snippet}</span>}', '', 1)
 
           p.write_text(s)
           PY
