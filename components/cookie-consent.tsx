@@ -34,8 +34,8 @@ export function CookieConsent(){
 
   if(!visible)return null;
 
-  return <div className="fixed inset-x-0 bottom-0 z-[100] p-0">
-    <section role="dialog" aria-label="Cookie settings" className="w-full rounded-t-[14px] border border-b-0 border-[#383838] bg-[#171717] px-4 py-3 text-[#f5f5f5] shadow-[0_20px_70px_rgba(0,0,0,.28)] sm:px-5 sm:py-3.5">
+  return <div className="fixed inset-x-0 bottom-0 z-[100] w-screen p-0">
+    <section role="dialog" aria-label="Cookie settings" className="w-full rounded-t-[14px] border border-b-0 border-[#383838] bg-[#171717] px-4 py-4 text-[#f5f5f5] shadow-[0_20px_70px_rgba(45,42,35,.28)] sm:px-5 sm:py-4.5">
       <h2 className="text-[19px] font-medium tracking-[-.025em]">Cookie settings</h2>
       <p className="mt-1.5 text-[13.5px] leading-[1.45] text-[#bdbdb7]">
         We use cookies to deliver and improve our services, analyze site usage, and, if you agree, to personalize your experience. Read our <a href="/privacy" className="underline underline-offset-2 hover:text-white">Privacy Policy</a> and <a href="/terms" className="underline underline-offset-2 hover:text-white">Terms & Conditions</a>.
@@ -44,7 +44,7 @@ export function CookieConsent(){
         <input type="checkbox" checked={legalAccepted} onChange={e=>setLegalAccepted(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-white" />
         <span>I agree to the <a href="/terms" className="underline underline-offset-2 hover:text-white">Terms & Conditions</a> and acknowledge the <a href="/privacy" className="underline underline-offset-2 hover:text-white">Privacy Policy</a>.</span>
       </label>
-      <button type="button" onClick={()=>setCustomizing(v=>!v)} className="mt-2.5 w-full rounded-[9px] bg-[#303030] px-4 py-2 text-[14px] font-medium transition hover:bg-[#393939]">{customizing?"Close cookie preferences":"Customize Cookie Settings"}</button>
+      <button type="button" onClick={()=>setCustomizing(v=>!v)} className="mt-2.5 w-full rounded-[9px] bg-[#303030] px-4 py-2.5 text-[14px] font-medium transition hover:bg-[#393939]">{customizing?"Close cookie preferences":"Customize Cookie Settings"}</button>
       {customizing&&<div className="mt-2.5 rounded-[9px] border border-[#3a3a3a] bg-[#202020] p-3 text-sm">
         <div className="flex items-center justify-between gap-4">
           <div><p className="font-medium">Necessary cookies</p><p className="mt-0.5 text-xs text-[#a9a9a3]">Always enabled for basic site functionality.</p></div>
@@ -57,8 +57,8 @@ export function CookieConsent(){
         <button type="button" onClick={()=>save("customized")} disabled={!legalAccepted} className="mt-2.5 w-full rounded-[9px] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition hover:bg-[#eee] disabled:cursor-not-allowed disabled:opacity-50">Save preferences</button>
       </div>}
       <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <button type="button" onClick={()=>save("rejected")} className="rounded-[9px] bg-[#303030] px-4 py-2 text-[14px] font-medium transition hover:bg-[#393939]">Reject All Cookies</button>
-        <button type="button" onClick={()=>save("accepted")} disabled={!legalAccepted} className="rounded-[9px] bg-white px-4 py-2 text-[14px] font-medium text-[#171717] transition hover:bg-[#eee] disabled:cursor-not-allowed disabled:opacity-50">Accept All Cookies</button>
+        <button type="button" onClick={()=>save("rejected")} className="rounded-[9px] bg-[#303030] px-4 py-2.5 text-[14px] font-medium transition hover:bg-[#393939]">Reject All Cookies</button>
+        <button type="button" onClick={()=>save("accepted")} disabled={!legalAccepted} className="rounded-[9px] bg-white px-4 py-2.5 text-[14px] font-medium text-[#171717] transition hover:bg-[#eee] disabled:cursor-not-allowed disabled:opacity-50">Accept All Cookies</button>
       </div>
     </section>
   </div>;
