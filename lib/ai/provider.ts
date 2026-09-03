@@ -89,6 +89,7 @@ class GeminiProvider implements AIProvider {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
+      signal: AbortSignal.timeout(45000),
     });
     if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
     const data = await response.json();
@@ -104,6 +105,7 @@ class GeminiProvider implements AIProvider {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
+      signal: AbortSignal.timeout(45000),
     });
     if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
     const parts: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> = [];
@@ -133,6 +135,7 @@ class OpenRouterProvider implements AIProvider {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
       body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
+      signal: AbortSignal.timeout(45000),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
     const data = await response.json();
@@ -145,6 +148,7 @@ class OpenRouterProvider implements AIProvider {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
       body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, stream: true, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
+      signal: AbortSignal.timeout(45000),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
     let text = "";
