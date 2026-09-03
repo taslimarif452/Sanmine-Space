@@ -1,0 +1,50 @@
+name: Fix live agent stream
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch live progress and streaming
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          route = Path('app/api/chat/route.ts')
+          s = route.read_text()
+          s = s.replace('''            (event) => {\n              if (event.type === "thinking") return;\n              send({ type: "event", event });\n            },''', '''            (event) => {\n              send({ type: "event", event });\n            },''')
+          route.write_text(s)
+
+          agent = Path('lib/agent/agent.ts')
+          s = agent.read_text()
+          s = s.replace('''  const streamText = (delta: string) => { if (delta) onText?.(delta); };''', '''  const streamText = (delta: string) => { if (delta) onText?.(delta); };\n  const emitThinking = () => emit({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });''')
+          s = s.replace('''    const response = await provider.chatStream(messages, tools, streamText);''', '''    emitThinking();\n    const response = await provider.chatStream(messages, tools, streamText);''')
+          s = s.replace('''    const response = buildSendSummary(result, detectLanguage(userMessage));\n    streamText(response);''', '''    const response = buildSendSummary(result, detectLanguage(userMessage));\n    emitThinking();\n    for (let i = 0; i < response.length; i += 18) streamText(response.slice(i, i + 18));''')
+          agent.write_text(s)
+
+          page = Path('app/page.tsx')
+          s = page.read_text()
+          s = s.replace('''function label(s:string){return ({thinking:"",searching:"Searching the web",opening:"Opening website",analyzing:"Analyzing",youtube:"Searching YouTube",proposal:"Generating proposal",email:"Writing email",researching:"Researching"}''', '''function label(s:string){return ({thinking:"Thinking",searching:"Searching the web",opening:"Opening website",analyzing:"Analyzing",youtube:"Searching YouTube",proposal:"Generating proposal",email:"Writing email",researching:"Researching"}''')
+          s = s.replace('''if(d.type==="event"&&d.event){if(d.event.type==="tool_start")setStatus(tool(d.event.name));if(d.event.type==="tool_result")setStatus("")}''', '''if(d.type==="event"&&d.event){if(d.event.type==="thinking")setStatus("thinking");if(d.event.type==="tool_start")setStatus(tool(d.event.name));if(d.event.type==="tool_result")setStatus("thinking")}''')
+          s = s.replace('''if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("");setMsgs([...next,{role:"assistant",content:streamed}]);''', '''if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("");setMsgs([...next,{role:"assistant",content:streamed}]);''')
+          page.write_text(s)
+          PY
+
+      - name: Commit changes and remove fixer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/api/chat/route.ts lib/agent/agent.ts app/page.tsx
+          git rm -f .github/workflows/fix-live-agent-stream.yml
+          git diff --cached --quiet && exit 0 || git commit -m "fix: show live agent progress and streamed replies"
+          git push
