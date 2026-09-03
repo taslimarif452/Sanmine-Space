@@ -58,19 +58,22 @@ export async function POST(request: Request) {
 
   try {
     if (!hasDatabaseConfig()) throw new AppError("CONFIG_ERROR", "Database persistence is not configured.", 503);
-    await runProductionMigrations();
-    await enforceRateLimit(`chat:${user.uid}`, 30, 60_000);
     const parsed = ChatRequestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", parsed.error.issues[0]?.message || "Invalid chat request.", 400);
     const { message, history, chatId: requestedChatId } = parsed.data;
     const chatHistory = history as ChatMessage[];
 
-    const chatId = await prepareChat(user, message, requestedChatId);
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         const send = (payload: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
         try {
+          // Emit progress before migrations, rate limiting, or chat persistence so the
+          // browser receives a visible status as soon as the request stream starts.
+          send({ type: "event", event: { type: "thinking", name: "request_start", toolCallId: `request-${Date.now()}` } });
+          await runProductionMigrations();
+          await enforceRateLimit(`chat:${user.uid}`, 30, 60_000);
+          const chatId = await prepareChat(user, message, requestedChatId);
           if (chatId) send({ type: "chat", chatId });
 
           if (isSimpleGreeting(message)) {
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
         } catch (error) {
           const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
           console.error("Chat stream error:", error);
-          send({ type: "error", error: messageText, code: /not configured|api key|private key/i.test(messageText) ? "CONFIG_ERROR" : "CHAT_ERROR", chatId });
+          send({ type: "error", error: messageText, code: /not configured|api key|private key/i.test(messageText) ? "CONFIG_ERROR" : "CHAT_ERROR" });
           controller.close();
         }
       },
