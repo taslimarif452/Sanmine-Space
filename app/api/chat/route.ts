@@ -9,6 +9,7 @@ import { ChatRequestSchema } from "@/lib/api/schemas";
 import { AppError, errorResponse, errorStatus } from "@/lib/api/errors";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { executeWithRetry, isToolTestRequest, isUnsafeAssistantOutput, normalizeToolResult, runSafeToolTest, MODEL_TIMEOUT_MS } from "@/lib/agent/reliability";
+import { createRunContext, ensureProductionSchema, startRun, finishRun, recordStep, recordUsage, estimateTokens, estimateCost, getRunLimits, assertRunBudget, recordProviderResult, chooseModel, type AgentRunKind } from "@/lib/agent/production";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,28 +87,56 @@ export async function POST(request: Request) {
         let closed = false;
         const send = (payload: Record<string, unknown>) => { if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`)); };
         const startAt = Date.now();
+        let runKind: AgentRunKind = "chat";
+        if (isToolTestRequest(message)) runKind = "tool_test";
+        else if (/research|research.*background|deep research|in background/i.test(message)) runKind = /background|deep/i.test(message) ? "background_research" : "research";
+        const selectedModel = chooseModel(runKind, runKind === "chat" ? "balanced" : "deep");
+        const providerName = (process.env.AI_PROVIDER || "gemini").trim().toLowerCase();
+        const run = createRunContext(user.uid, runKind, providerName, selectedModel);
+        let step = 0;
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+        let totalCost = 0;
         try {
-          send({ type: "event", event: { type: "thinking", name: "request_start", toolCallId: `request-${Date.now()}` } });
+          send({ type: "run", runId: run.runId, kind: run.kind, limits: getRunLimits() });
+          send({ type: "event", event: { type: "thinking", name: "request_start", toolCallId: `request-${run.runId}` } });
+          await ensureProductionSchema();
+          await startRun(run, { messageLength: message.length });
+          step += 1;
+          await recordStep(run, step, "lifecycle", "request_start", "completed", Date.now() - startAt);
           await enforceRateLimit(`chat:${user.uid}`, 30, 60_000);
           const chatId = await prepareChat(user, message, requestedChatId);
           if (chatId) send({ type: "chat", chatId });
 
           if (isSimpleGreeting(message)) {
             const greetingResponse = "Hi! 👋 How can I help you today?";
-            await persistAssistant(user, chatId, greetingResponse, { kind: "chat_response", mode: "greeting", durationMs: Date.now() - startAt });
+            const outputTokens = estimateTokens(greetingResponse);
+            const usage = estimateCost(providerName, selectedModel, estimateTokens(message), outputTokens);
+            await recordUsage(run, usage);
+            await persistAssistant(user, chatId, greetingResponse, { kind: "chat_response", mode: "greeting", runId: run.runId, durationMs: Date.now() - startAt, usage });
             send({ type: "delta", delta: greetingResponse });
-            send({ type: "done", response: greetingResponse, events: [], chatId, metadata: { mode: "greeting" }, persistence: chatId ? "saved" : "unavailable" });
+            send({ type: "done", response: greetingResponse, events: [], chatId, runId: run.runId, metadata: { mode: "greeting", runId: run.runId, usage }, persistence: chatId ? "saved" : "unavailable" });
+            await finishRun(run, "completed", { mode: "greeting" });
             closed = true; controller.close(); return;
           }
 
           if (isToolTestRequest(message)) {
-            send({ type: "event", event: { type: "thinking", name: "tool_test", toolCallId: `tool-test-${Date.now()}` } });
+            send({ type: "event", event: { type: "thinking", name: "tool_test", toolCallId: `tool-test-${run.runId}` } });
+            step += 1;
+            const testStarted = Date.now();
             const report = await runSafeToolTest((event) => send({ type: "event", event }));
+            await recordStep(run, step, "tool_test", "safe_tool_test", "completed", Date.now() - testStarted, undefined, { tools: report.map((x) => x.tool) });
             const passed = report.filter((x) => x.status === "passed").length;
             const response = ["## Tool health check", "", `Tested **${report.length}** safe tools: **${passed} passed**.`, "", "| Tool | Status | Details |", "| --- | --- | --- |", ...report.map((x) => `| ${x.tool} | ${x.status === "passed" ? "✅ Passed" : x.status === "unavailable" ? "⚪ Unavailable" : "❌ Failed"} | ${x.message.replace(/\|/g, "\\|")} |`)].join("\n");
-            const saved = await persistAssistant(user, chatId, response, { kind: "tool_test", report, durationMs: Date.now() - startAt });
+            const outputTokens = estimateTokens(response);
+            const usage = estimateCost(providerName, selectedModel, estimateTokens(message), outputTokens);
+            totalOutputTokens += outputTokens; totalInputTokens += estimateTokens(message); totalCost += usage.totalCostUsd;
+            assertRunBudget(run, totalInputTokens, totalOutputTokens, totalCost);
+            await recordUsage(run, usage);
+            const saved = await persistAssistant(user, chatId, response, { kind: "tool_test", runId: run.runId, report, durationMs: Date.now() - startAt, usage });
             send({ type: "delta", delta: response });
-            send({ type: "done", response, events: [], chatId, metadata: { mode: "tool_test", report }, persistence: saved ? "saved" : "unavailable" });
+            send({ type: "done", response, events: [], chatId, runId: run.runId, metadata: { mode: "tool_test", runId: run.runId, report, usage }, persistence: saved ? "saved" : "unavailable" });
+            await finishRun(run, "completed", { mode: "tool_test", passed, total: report.length });
             closed = true; controller.close(); return;
           }
 
@@ -117,6 +146,9 @@ export async function POST(request: Request) {
             () => runAgent(chatHistory, message, (event) => {
               const safeEvent = event.type === "tool_result" ? { ...event, result: normalizeToolResult(event.name, event.toolCallId, event.result).result } : event;
               rawEvents.push(safeEvent);
+              step += 1;
+              const stepStarted = Date.now();
+              recordStep(run, step, safeEvent.type, safeEvent.name || safeEvent.type, "completed", Date.now() - stepStarted, safeEvent.toolCallId).catch((e) => console.error("Step telemetry warning:", e));
               send({ type: "event", event: safeEvent });
             }, user.uid, (delta) => {
               if (!delta) return;
@@ -130,14 +162,25 @@ export async function POST(request: Request) {
           let responseText = result.response?.trim() || streamed.trim();
           if (isUnsafeAssistantOutput(responseText)) responseText = buildResearchFallback(events, message);
           if (!responseText) throw new Error("The AI completed without producing a usable answer.");
-          const metadata = { kind: "chat_response", durationMs: Date.now() - startAt, eventCount: events.length, toolCount: events.filter((e) => e.type === "tool_start").length, sources: events.filter((e) => e.type === "tool_result").map((e) => ({ name: e.name, toolCallId: e.toolCallId })) };
+          totalInputTokens = estimateTokens(chatHistory.map((m) => m.content).join("\n") + message);
+          totalOutputTokens = estimateTokens(responseText);
+          const usage = estimateCost(providerName, selectedModel, totalInputTokens, totalOutputTokens);
+          totalCost = usage.totalCostUsd;
+          assertRunBudget(run, totalInputTokens, totalOutputTokens, totalCost);
+          await recordUsage(run, usage);
+          const toolCount = events.filter((e) => e.type === "tool_start").length;
+          const metadata = { kind: "chat_response", runId: run.runId, durationMs: Date.now() - startAt, eventCount: events.length, toolCount, sources: events.filter((e) => e.type === "tool_result").map((e) => ({ name: e.name, toolCallId: e.toolCallId })), usage };
           const saved = await persistAssistant(user, chatId, responseText, metadata);
-          send({ type: "done", response: responseText, events: events.filter((event) => event.type !== "thinking"), chatId, metadata, persistence: saved ? "saved" : "unavailable" });
+          send({ type: "done", response: responseText, events: events.filter((event) => event.type !== "thinking"), chatId, runId: run.runId, metadata, persistence: saved ? "saved" : "unavailable" });
+          await finishRun(run, "completed", { toolCount, usage });
+          await recordProviderResult(providerName, true, Date.now() - startAt);
           closed = true; controller.close();
         } catch (error) {
           const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
           console.error("Chat stream error:", error);
-          send({ type: "error", error: messageText, code: /not configured|api key|private key/i.test(messageText) ? "CONFIG_ERROR" : /timed out/i.test(messageText) ? "TIMEOUT" : "CHAT_ERROR" });
+          await finishRun(run, "failed", { durationMs: Date.now() - startAt }, messageText).catch(() => undefined);
+          await recordProviderResult(providerName, false, Date.now() - startAt, messageText).catch(() => undefined);
+          send({ type: "error", runId: run.runId, error: messageText, code: /not configured|api key|private key/i.test(messageText) ? "CONFIG_ERROR" : /timed out|timeout/i.test(messageText) ? "TIMEOUT" : "CHAT_ERROR" });
           closed = true; controller.close();
         }
       },
