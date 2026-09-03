@@ -44,6 +44,7 @@ export const searchWebTool: AgentTool = {
         include_raw_content: false,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!response.ok) {
