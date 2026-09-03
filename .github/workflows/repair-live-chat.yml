@@ -1,0 +1,78 @@
+name: Repair live chat
+on:
+  push:
+    branches: [main]
+jobs:
+  repair:
+    if: contains(github.event.head_commit.message, 'repair live chat')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair malformed stream handler and improve live UX
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/page.tsx')
+          s = p.read_text()
+
+          # Repair the malformed delta handler introduced by the previous patch.
+          bad = re.compile(r'if\(d\.type===?"delta"&&d\.delta\)\{.*?\}\]\);\}\s*if\(d\.type===?"done"', re.S)
+          good = '''if(d.type==="delta"&&d.delta){
+            streamed+=d.delta;
+            setStatus("Writing answer");
+            if(!typeTimer){
+              typeTimer=setInterval(()=>{
+                if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+                displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
+                setMsgs([...base,{role:"assistant",content:displayed}]);
+              },30);
+            }
+          }
+        if(d.type==="done"'''
+          s, n = bad.subn(good, s, count=1)
+          if n != 1:
+              # Handle the exact current malformed spelling as a fallback.
+              bad2 = re.compile(r'if\(d\.type==="delta"&&d\.delta\)\{\s*streamed\+=d\.delta;.*?setMsgs\(\[\.\.\.base,\{role:"assistant",content:displayed\}\]\);\s*\}\s*\}\]\);\}\s*if\(d\.type==="done"', re.S)
+              s, n = bad2.subn(good, s, count=1)
+          if n != 1:
+              raise SystemExit('Could not locate malformed delta handler')
+
+          # If the typewriter state was lost, add it back beside the stream locals.
+          if 'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId;' not in s:
+              marker='let answer="",streamed="",events:Event[]=[],id=chatId;'
+              if marker not in s: raise SystemExit('stream locals not found')
+              s=s.replace(marker,'let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;',1)
+          elif 'typeTimer:ReturnType<typeof setInterval>|null=null' not in s:
+              s=s.replace('let answer="",streamed="",displayed="",events:Event[]=[],id=chatId;','let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;',1)
+
+          # Ensure completion flushes the visible text and timers are always cleaned up.
+          completion='if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'
+          if completion in s:
+              s=s.replace(completion,'if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");',1)
+          finally_old='finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
+          if finally_old in s:
+              s=s.replace(finally_old,'finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}',1)
+
+          # Keep the existing Thinking/research/tool labels, but show the activity as plain text rather than a card.
+          compact = re.compile(r'\{loading&&status&&<div className="flex items-center gap-[^"]+"[^>]*>.*?</div>\}', re.S)
+          activity='{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'
+          s,n=compact.subn(activity,s,count=1)
+
+          p.write_text(s)
+          PY
+      - name: Commit repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git diff --cached --quiet && { echo "No changes"; exit 1; }
+          git commit -m "fix: restore live chat activity and typewriter streaming"
+          git push
+          git rm .github/workflows/repair-live-chat.yml
+          git commit -m "chore: remove temporary live chat repair workflow"
+          git push
