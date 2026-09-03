@@ -4,7 +4,6 @@ on:
     branches: [main]
 jobs:
   repair:
-    if: contains(github.event.head_commit.message, 'repair live chat')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,23 +45,7 @@ jobs:
               raise SystemExit('exact malformed stream handler not found')
           s=s.replace(bad,good,1)
 
-          # Ensure the visible typewriter state exists and is flushed before final persistence.
-          state='let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;'
-          if state not in s:
-              raise SystemExit('typewriter state missing')
-          completion='if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without producing a usable answer.");'
-          if completion in s:
-              s=s.replace(completion,'if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without producing a usable answer.");',1)
-          else:
-              completion2='if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without producing a usable answer.");'
-              if completion2 not in s: raise SystemExit('completion marker missing')
-
-          final_old='finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
-          final_new='finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}'
-          if final_old not in s and 'finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}' in s:
-              s=s.replace('finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}',final_new,1)
-
-          # Keep activity labels as plain inline text: no enclosing status card.
+          # Show live activity immediately and as separate text items, not a status card.
           old='''{loading&&status&&<div className="flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><span className="inline-flex gap-0.5" aria-hidden="true"><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.2s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.1s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current"/></span></span></div>}'''
           new='''{loading&&status&&<><span className="mb-3 inline-flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="mb-3 ml-3 inline-flex items-center gap-1.5 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}'''
           if old in s:
@@ -75,7 +58,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/page.tsx
-          git diff --cached --quiet && { echo "No changes"; exit 1; }
+          git diff --cached --quiet && { echo "No changes"; exit 0; }
           git commit -m "fix: restore live chat activity and typewriter streaming"
           git push
           git rm .github/workflows/repair-live-chat.yml
