@@ -10,6 +10,7 @@ export interface AIProvider {
 
 const MODEL_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 1;
+const STREAM_GATE_CHARS = 180;
 
 function lastUserText(messages: ChatMessage[]) {
   return [...messages].reverse().find((message) => message.role === "user")?.content || "";
@@ -44,6 +45,29 @@ function prepareMessages(messages: ChatMessage[], tools: ToolDefinition[]) {
   return [...messages, { role: "user", content: TOOL_TEST_INSTRUCTION }];
 }
 
+function createStreamGate(onText?: (delta: string) => void) {
+  let pending = "";
+  let released = false;
+  return {
+    push(delta: string) {
+      if (!delta || !onText) return;
+      if (released) { onText(delta); return; }
+      pending += delta;
+      if (isGenericOrRaw(pending)) return;
+      if (pending.length >= STREAM_GATE_CHARS || /[.!?]\s$/.test(pending)) {
+        released = true;
+        onText(pending);
+        pending = "";
+      }
+    },
+    flush() {
+      if (!onText || released || !pending) return;
+      if (validateFinalText(pending)) onText(pending);
+      pending = "";
+    },
+  };
+}
+
 class ResilientProvider implements AIProvider {
   constructor(private readonly primary: AIProvider, private readonly fallback: AIProvider) {}
 
@@ -76,15 +100,17 @@ class ResilientProvider implements AIProvider {
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
     const prepared = prepareMessages(messages, tools);
+    const gate = createStreamGate(onText);
     try {
-      const result = await this.primary.chatStream(prepared, tools, onText);
+      const result = await this.primary.chatStream(prepared, tools, (delta) => gate.push(delta));
+      gate.flush();
       if (result.text && !validateFinalText(result.text) && tools.length === 0 && hasToolContext(prepared)) {
         return this.chat(prepared, []);
       }
       return result;
     } catch (primaryError) {
       try {
-        return await this.fallback.chatStream(prepared, tools, onText);
+        return await this.fallback.chatStream(prepared, tools, (delta) => gate.push(delta));
       } catch (fallbackError) {
         const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
         const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
