@@ -11,3 +11,10 @@ button,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:defaul
 main.min-h-screen>section:first-of-type>div.mb-7.h-14.w-14{display:none!important}
 main.min-h-screen>footer{background-color:#f3f1ec!important}
 section .flex.gap-3>img{display:none}.campaign-page{scrollbar-gutter:stable}.campaign-field input,.campaign-field select,.campaign-field textarea{width:100%;border:1px solid #dcd9d1;border-radius:12px;background:#fff;color:#282721;padding:10px 12px;outline:none}.campaign-field input:focus,.campaign-field select:focus,.campaign-field textarea:focus{border-color:#b9b4aa;box-shadow:0 0 0 3px rgba(40,39,33,.06)}.campaign-field textarea{resize:vertical;min-height:110px}
+/* Chat research sources: keep the useful source links, but make them compact instead of large content cards. */
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]{padding:8px 10px!important;gap:9px!important;border-radius:10px!important;min-height:42px!important;box-shadow:none!important}
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\] img{width:22px!important;height:22px!important;border-radius:5px!important}
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:first-child{font-size:12px!important;line-height:1.25!important}
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(2){font-size:10px!important;line-height:1.2!important;margin-top:2px!important}
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(3){display:none!important}
+a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>svg{width:13px!important;height:13px!important}
