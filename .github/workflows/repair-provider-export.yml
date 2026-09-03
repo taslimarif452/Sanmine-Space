@@ -22,6 +22,47 @@ jobs:
           git add lib/ai/provider.ts
           git commit -m "fix: restore getProvider export" || true
           git push origin main
+      - name: Repair chat streaming regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/page.tsx')
+          s=p.read_text()
+          bad='''if(d.type==="delta"&&d.delta){
+          streamed+=d.delta;
+          setStatus("Writing answer");
+          if(!typeTimer){
+            typeTimer=setInterval(()=>{
+              if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+              displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
+              setMsgs([...base,{role:"assistant",content:displayed}]);
+            },30);
+          }
+        }]);}
+        if(d.type==="done"'''
+          good='''if(d.type==="delta"&&d.delta){
+          streamed+=d.delta;
+          setStatus("Writing answer");
+          if(!typeTimer){
+            typeTimer=setInterval(()=>{
+              if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+              displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
+              setMsgs([...base,{role:"assistant",content:displayed}]);
+            },30);
+          }
+        }
+        if(d.type==="done"'''
+          if bad in s:
+              s=s.replace(bad,good,1)
+              p.write_text(s)
+          PY
+          if ! git diff --quiet -- app/page.tsx; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/page.tsx
+            git commit -m "fix: restore live chat activity and typewriter streaming"
+            git push origin main
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
