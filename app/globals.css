@@ -19,3 +19,7 @@ a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>sp
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(2){font-size:10px!important;line-height:1.2!important;margin-top:1px!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(3){display:none!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>svg{display:none!important}
+/* Live agent activity: plain stacked task lines, no card/container styling. */
+span.mb-3.inline-flex.items-center.gap-2.px-1.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:9px!important;font-size:14px!important;line-height:20px!important;color:#77746d!important}
+span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:8px!important;font-size:14px!important;line-height:20px!important;color:#9a968e!important}
+span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm svg{flex:none!important}
