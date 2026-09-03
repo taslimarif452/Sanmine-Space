@@ -13,12 +13,30 @@ export function getProvider(): AIProvider {
   return selected === "openrouter" ? new ResilientProvider(new OpenRouterProvider(), new GeminiProvider()) : new ResilientProvider(new GeminiProvider(), new OpenRouterProvider());
 }
 
+function isGenericOrRaw(text: string) {
+  const value = text.trim();
+  return !value || /^i[’']?m ready\. what would you like me to do\??$/i.test(value) || /svgSources|tool_result|functionCall|functionResponse|<svg\b/i.test(value);
+}
+
+function hasToolContext(messages: ChatMessage[]) {
+  return messages.some((message) => /tool result|preliminary web search result|authoritative youtube data|tool execution result/i.test(message.content));
+}
+
+const CLEAN_SYNTHESIS_INSTRUCTION = `Synthesize the tool results above into the actual answer to the user's request. Do not say you are ready and do not ask what the user wants. Do not output raw tool payloads, JSON, SVG, internal field names, function calls, or duplicate raw URLs. Use clean Markdown and cite/use the URLs returned by the tools when relevant. If a requested capability failed or is not configured, state that clearly instead of pretending it worked.`;
+
 class ResilientProvider implements AIProvider {
   constructor(private readonly primary: AIProvider, private readonly fallback: AIProvider) {}
 
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
     try {
-      return await this.primary.chat(messages, tools);
+      const result = await this.primary.chat(messages, tools);
+      if (tools.length === 0 && hasToolContext(messages) && isGenericOrRaw(result.text)) {
+        const retry = await this.primary.chat([...messages, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
+        if (!isGenericOrRaw(retry.text)) return retry;
+        const fallback = await this.fallback.chat([...messages, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
+        if (!isGenericOrRaw(fallback.text)) return fallback;
+      }
+      return result;
     } catch (primaryError) {
       try {
         return await this.fallback.chat(messages, tools);
