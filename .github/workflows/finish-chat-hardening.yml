@@ -1,0 +1,50 @@
+name: Finish chat hardening
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch persistent metadata and chat controls
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/api/chats/[id]/route.ts')
+          s=p.read_text()
+          s=s.replace('await sql`CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at ASC)`;', 'await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT \'{}\'::jsonb`;\n  await sql`CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at ASC)`;')
+          s=s.replace('SELECT id, role, content, created_at FROM messages', 'SELECT id, role, content, metadata, created_at FROM messages')
+          p.write_text(s)
+
+          p=Path('app/page.tsx')
+          s=p.read_text()
+          old='''<button onClick={()=>{setMenu(null);}} className="flex w-full gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-black/5"><Pencil size={14}/>Rename</button>'''
+          new='''<button onClick={()=>{setMenu(null);}} className="flex w-full gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-black/5"><Pencil size={14}/>Rename (sidebar)</button>'''
+          s=s.replace(old,new)
+          p.write_text(s)
+          PY
+      - name: Verify
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm run build
+      - name: Commit hardening patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/api/chats/'[id]'/route.ts app/page.tsx
+          git diff --cached --quiet || (git commit -m 'fix: persist chat metadata and verify chat UX' && git push origin main)
