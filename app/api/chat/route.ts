@@ -73,21 +73,25 @@ export async function POST(request: Request) {
         try {
           if (chatId) send({ type: "chat", chatId });
 
-          // Simple greetings should never invoke the agent/model or show a thinking state.
           if (isSimpleGreeting(message)) {
             const greetingResponse = "Hi! 👋 How can I help you today?";
             await persistAssistant(user, chatId, greetingResponse);
+            send({ type: "delta", delta: greetingResponse });
             send({ type: "done", response: greetingResponse, events: [], chatId, persistence: chatId ? "saved" : "unavailable" });
             controller.close();
             return;
           }
 
-          // Do not expose an artificial "thinking" state for ordinary requests.
-          // Tool events are still streamed when an actual tool is used.
-          const result = await runAgent(chatHistory, message, (event) => {
-            if (event.type === "thinking") return;
-            send({ type: "event", event });
-          }, user.uid);
+          const result = await runAgent(
+            chatHistory,
+            message,
+            (event) => {
+              if (event.type === "thinking") return;
+              send({ type: "event", event });
+            },
+            user.uid,
+            (delta) => send({ type: "delta", delta }),
+          );
           const saved = await persistAssistant(user, chatId, result.response);
           send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events.filter((event) => event.type !== "thinking"), chatId, persistence: saved ? "saved" : "unavailable" });
           controller.close();
