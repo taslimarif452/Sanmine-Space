@@ -18,9 +18,9 @@ const features=[
 ];
 
 const pricingPlans=[
-  {name:"Free",eyebrow:"Get started",details:["AI Chat","Limited leads","Web research"],cta:"Start"},
+  {name:"Free",eyebrow:"Get started",details:["AI Chat","Limited leads","Web research"],cta:"Start",featured:false},
   {name:"Pro",eyebrow:"For everyday productivity",details:["More research","Lead scoring","Outreach tools"],cta:"Start Pro",featured:true},
-  {name:"Business",eyebrow:"For teams and campaigns",details:["Higher limits","Campaigns","Team workspace"],cta:"Contact"},
+  {name:"Business",eyebrow:"For teams and campaigns",details:["Higher limits","Campaigns","Team workspace"],cta:"Contact",featured:false},
 ] as const;
 
 function Logo(){return <div className="flex items-center gap-2.5"><img src={LOGO} alt="Samine Space" className="h-8 w-8 rounded-[9px] object-cover"/><span className="text-[15px] font-semibold tracking-[-.02em]">Samine Space</span></div>}
