@@ -41,6 +41,7 @@ const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
 const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bbhej/i.test(message);
 const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bbhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
+const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
 
 function detectLanguage(text: string) {
   if (/[\u0900-\u097F]/.test(text) || /\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text)) return "hi";
@@ -186,15 +187,43 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     return { response, events };
   }
 
+  const researchMode = !isYouTubeRequest(userMessage) && isWebResearchRequest(userMessage);
+
+  // For explicit web-research requests, start the real search before asking the model to plan
+  // more tool calls. This prevents a streamed tool-selection request from appearing stuck at
+  // "Thinking" and guarantees the user sees concrete research progress immediately.
+  if (researchMode) {
+    const searchTool = getTool("search_web");
+    if (searchTool) {
+      const searchId = `forced-web-search-${Date.now()}`;
+      emit({ type: "tool_start", name: "search_web", toolCallId: searchId });
+      let result: unknown;
+      try {
+        result = await searchTool.execute({ query: userMessage, limit: 8 });
+      } catch (error) {
+        result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." };
+      }
+      emit({ type: "tool_result", name: "search_web", toolCallId: searchId, result });
+      messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
+    }
+  }
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     emitThinking();
-    const response = await provider.chatStream(messages, tools, streamText);
-    if (!response.toolCalls.length) return { response: response.text || "I’m ready. What would you like me to do?", events };
+    // Tool orchestration uses the non-streaming provider call. Streaming function-call
+    // responses can leave some providers waiting indefinitely before the first tool event.
+    // Once all tools are complete, the final answer is streamed separately without tools.
+    const response = await provider.chat(messages, tools);
+    if (!response.toolCalls.length) {
+      const finalText = response.text || "I’m ready. What would you like me to do?";
+      for (let i = 0; i < finalText.length; i += 24) streamText(finalText.slice(i, i + 24));
+      return { response: finalText, events };
+    }
 
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
-      if (isYouTubeRequest(userMessage) && call.name === "youtube_search") {
-        messages.push({ role: "user", content: "The YouTube Data API v3 search has already been executed. Use that authoritative result to answer the user; do not call youtube_search again." });
+      if ((isYouTubeRequest(userMessage) && call.name === "youtube_search") || (researchMode && call.name === "search_web")) {
+        messages.push({ role: "user", content: `The ${call.name} request has already been executed above. Use the existing tool result and do not call ${call.name} again for this request.` });
         continue;
       }
       emit({ type: "tool_start", name: call.name, toolCallId: call.id });
