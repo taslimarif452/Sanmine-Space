@@ -108,7 +108,7 @@ function buildSendSummary(result: any, language: string) {
     en: { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." },
   }[language as "hi" | "bn" | "es" | "fr" | "en"] || undefined;
   const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." };
-  const processed = language === "hi" ? `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}` : `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}`;
+  const processed = `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}`;
   const lines = [
     l.title,
     `${processed}${result?.sender ? ` (${result.sender})` : ""}.`,
@@ -127,18 +127,17 @@ function buildSendSummary(result: any, language: string) {
   return lines.join("\n");
 }
 
-export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string) {
+export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void) {
   const provider = getProvider();
   const tools = getToolDefinitions();
   const events: AgentEvent[] = [];
   const emit = (event: AgentEvent) => { events.push(event); onEvent?.(event); };
+  const streamText = (delta: string) => { if (delta) onText?.(delta); };
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history.slice(-12),
     { role: "user", content: userMessage },
   ];
-
-  emit({ type: "thinking" });
 
   if (isYouTubeRequest(userMessage)) {
     const youtube = getTool("youtube_search");
@@ -159,15 +158,11 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
 
-  // Explicit send requests are transactional actions, not ordinary chat turns.
-  // Provider preflight happens inside the send tool before contact research.
   if (isExplicitSendRequest(userMessage) && userId) {
     const sendTool = getTool("send_proposal_outreach");
     const targets = parseResearchTargets(history);
     if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
-    if (!targets.length) {
-      return { response: "I can send the proposals, but I could not safely recover the creator list from the previous research result. Please run the creator search again, then ask me to send the proposals.", events };
-    }
+    if (!targets.length) return { response: "I can send the proposals, but I could not safely recover the creator list from the previous research result. Please run the creator search again, then ask me to send the proposals.", events };
 
     emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
     let result: unknown;
@@ -183,11 +178,13 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
     }
     emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
-    return { response: buildSendSummary(result, detectLanguage(userMessage)), events };
+    const response = buildSendSummary(result, detectLanguage(userMessage));
+    streamText(response);
+    return { response, events };
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const response = await provider.chat(messages, tools);
+    const response = await provider.chatStream(messages, tools, streamText);
     if (!response.toolCalls.length) return { response: response.text || "I’m ready. What would you like me to do?", events };
 
     for (const call of response.toolCalls) {
@@ -201,9 +198,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
       else {
         try {
-          const argumentsForTool = call.name === "send_proposal_outreach" && userId
-            ? { ...call.arguments, user_id: userId }
-            : call.arguments;
+          const argumentsForTool = call.name === "send_proposal_outreach" && userId ? { ...call.arguments, user_id: userId } : call.arguments;
           result = await tool.execute(argumentsForTool);
         } catch (error) {
           result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." };
@@ -215,5 +210,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     }
   }
 
-  return { response: "I reached the tool-call limit for this request. Please try the task again.", events };
+  const response = "I reached the tool-call limit for this request. Please try the task again.";
+  streamText(response);
+  return { response, events };
 }
