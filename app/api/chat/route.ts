@@ -12,6 +12,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const isSimpleGreeting = (message: string) =>
+  /^(hi|hello|hey|hii|hiii|helo|hola|namaste|good\s+(morning|afternoon|evening|night))\s*[!.?]*$/i.test(message.trim());
+
 async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, requestedChatId?: string | null) {
   if (!hasDatabaseConfig()) return null;
   try {
@@ -69,10 +72,24 @@ export async function POST(request: Request) {
         const send = (payload: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
         try {
           if (chatId) send({ type: "chat", chatId });
-          send({ type: "status", status: "thinking" });
-          const result = await runAgent(chatHistory, message, (event) => send({ type: "event", event }), user.uid);
+
+          // Simple greetings should never invoke the agent/model or show a thinking state.
+          if (isSimpleGreeting(message)) {
+            const greetingResponse = "Hi! 👋 How can I help you today?";
+            await persistAssistant(user, chatId, greetingResponse);
+            send({ type: "done", response: greetingResponse, events: [], chatId, persistence: chatId ? "saved" : "unavailable" });
+            controller.close();
+            return;
+          }
+
+          // Do not expose an artificial "thinking" state for ordinary requests.
+          // Tool events are still streamed when an actual tool is used.
+          const result = await runAgent(chatHistory, message, (event) => {
+            if (event.type === "thinking") return;
+            send({ type: "event", event });
+          }, user.uid);
           const saved = await persistAssistant(user, chatId, result.response);
-          send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events, chatId, persistence: saved ? "saved" : "unavailable" });
+          send({ type: "done", response: result.response || "I’m ready. What would you like me to do?", events: result.events.filter((event) => event.type !== "thinking"), chatId, persistence: saved ? "saved" : "unavailable" });
           controller.close();
         } catch (error) {
           const messageText = error instanceof Error ? error.message : "Something went wrong while processing the chat request.";
