@@ -14,24 +14,52 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Patch chat menu behavior
+      - name: Patch chat menu, progress UI, and agent routing
         run: |
           python - <<'PY'
           from pathlib import Path
+
+          # Agent instructions: research/test requests must produce a real synthesized answer,
+          # never a raw tool dump or generic readiness message.
+          p = Path('lib/agent/agent.ts')
+          s = p.read_text()
+          marker = 'If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.`;'
+          replacement = '''If a requested tool is unavailable or returns not_configured, clearly say that capability is not connected yet.
+
+TOOL TEST MODE:
+- When the user asks to test, verify, inspect, demonstrate, or check the available tools, do not answer with a generic readiness message.
+- Use agent_capabilities and the relevant tools that can be safely exercised. Read-only/research tools should actually run when their required input is available.
+- Report only tools confirmed by tool_start/tool_result events. If a tool needs information that is missing, say "not tested — required input missing".
+- Never run an external side-effecting send merely as a tool test. Sending requires a clear explicit send request and a real target.
+
+OUTPUT SAFETY:
+- Never expose raw tool payloads, SVG source, JSON event objects, function calls, or internal field names such as svgSources, tool_result, functionCall, or functionResponse.
+- Never dump duplicate raw URLs. Synthesize tool results into clean Markdown; the frontend owns source-card rendering.
+- After tools have run, never answer only "I'm ready" or "What would you like me to do?". Answer the user's actual request.`;'''
+          if marker in s and 'TOOL TEST MODE:' not in s:
+              s = s.replace(marker, replacement, 1)
+          # Force explicit tool-test language into the same early research path used by
+          # normal check/search/research requests.
+          needle = r'|\\bcurrent\\b|\\blatest\\b/i.test(message);'
+          if needle in s and '|\\btest\\b|\\btesting\\b|\\bverify\\b|\\btools?\\b' not in s:
+              s = s.replace(needle, r'|\\bcurrent\\b|\\blatest\\b|\\btest\\b|\\btesting\\b|\\bverify\\b|\\btools?\\b|\\bcapabilit(?:y|ies)\\b/i.test(message);', 1)
+          p.write_text(s)
+
+          # Frontend progress: instant, quiet ChatGPT-like status with animated dots.
           p = Path('app/page.tsx')
           s = p.read_text()
-          old = 'useEffect(()=>{if(!menu)return;const close=()=>setMenu(null);document.addEventListener("pointerdown",close,true);document.addEventListener("mousedown",close,true);document.addEventListener("touchstart",close,true);document.addEventListener("click",close,true);return()=>{document.removeEventListener("pointerdown",close,true);document.removeEventListener("mousedown",close,true);document.removeEventListener("touchstart",close,true);document.removeEventListener("click",close,true)}},[menu]);'
-          new = 'useEffect(()=>{if(!menu)return;const close=(e:Event)=>{const t=e.target;if(t instanceof Element){const b=t.closest("button");const label=(b?.textContent||"").trim().toLowerCase();if(label==="delete"||label==="rename"||label.includes("delete chat")||label.includes("rename chat"))return}setMenu(null)};document.addEventListener("pointerdown",close,true);document.addEventListener("mousedown",close,true);document.addEventListener("touchstart",close,true);document.addEventListener("click",close,true);return()=>{document.removeEventListener("pointerdown",close,true);document.removeEventListener("mousedown",close,true);document.removeEventListener("touchstart",close,true);document.removeEventListener("click",close,true)}},[menu]);'
+          old = '{loading&&status&&<div className="flex items-center gap-3 px-1 text-sm text-[var(--muted)]"><span>{label(status)} <Loader2 size={14} className="inline animate-spin"/></span></div>}'
+          new = '{loading&&status&&<div className="flex items-center gap-2 px-1 text-sm text-[var(--muted)]"><span className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{label(status)}</span><span className="inline-flex gap-0.5" aria-hidden="true"><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.2s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-.1s]"/><i className="h-1 w-1 animate-bounce rounded-full bg-current"/></span></span></div>}'
           if old in s:
-              p.write_text(s.replace(old, new, 1))
-          else:
-              print('Menu effect already patched or source differs; leaving page unchanged')
+              s = s.replace(old, new, 1)
+          s = s.replace('<div className="grid gap-2 sm:grid-cols-2">{sources.map(s=><a', '<div className="grid gap-2">{sources.map(s=><a', 1)
+          p.write_text(s)
           PY
       - name: Commit patch
         run: |
           if git diff --quiet; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/page.tsx
-          git commit -m 'Fix chat rename and delete menu actions'
+          git add app/page.tsx lib/agent/agent.ts
+          git commit -m 'fix: improve tool routing and progress UX'
           git push
