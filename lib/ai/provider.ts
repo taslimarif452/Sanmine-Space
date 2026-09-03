@@ -8,52 +8,83 @@ export interface AIProvider {
   chatStream(messages: ChatMessage[], tools?: ToolDefinition[], onText?: (delta: string) => void): Promise<ProviderResponse>;
 }
 
-export function getProvider(): AIProvider {
-  const selected = (process.env.AI_PROVIDER || "gemini").trim().toLowerCase();
-  return selected === "openrouter" ? new ResilientProvider(new OpenRouterProvider(), new GeminiProvider()) : new ResilientProvider(new GeminiProvider(), new OpenRouterProvider());
+const MODEL_TIMEOUT_MS = 30000;
+const MAX_RETRIES = 1;
+
+function lastUserText(messages: ChatMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user")?.content || "";
+}
+
+function isToolTestRequest(text: string) {
+  return /\b(test|check|verify|validate)\b[\s\S]{0,80}\b(all|every|available|tools?|capabilit)/i.test(text) || /\btools?\b[\s\S]{0,80}\b(test|check|verify)\b/i.test(text);
 }
 
 function isGenericOrRaw(text: string) {
   const value = text.trim();
-  return !value || /^i[’']?m ready\. what would you like me to do\??$/i.test(value) || /svgSources|tool_result|functionCall|functionResponse|<svg\b/i.test(value);
+  return !value || /^i[’']?m ready\.?\s*(what would you like me to do\??)?$/i.test(value) || /svgSources|tool_result|functionCall|functionResponse|<svg\b|```(?:json)?\s*\{[\s\S]*"(?:tool|function|results?)"/i.test(value);
+}
+
+function validateFinalText(text: string) {
+  const value = text.trim();
+  if (isGenericOrRaw(value)) return false;
+  if (value.length > 50000) return false;
+  return true;
 }
 
 function hasToolContext(messages: ChatMessage[]) {
   return messages.some((message) => /tool result|preliminary web search result|authoritative youtube data|tool execution result/i.test(message.content));
 }
 
-const CLEAN_SYNTHESIS_INSTRUCTION = `Synthesize the tool results above into the actual answer to the user's request. Do not say you are ready and do not ask what the user wants. Do not output raw tool payloads, JSON, SVG, internal field names, function calls, or duplicate raw URLs. Use clean Markdown and cite/use the URLs returned by the tools when relevant. If a requested capability failed or is not configured, state that clearly instead of pretending it worked.`;
+const CLEAN_SYNTHESIS_INSTRUCTION = `Synthesize the tool results above into the actual answer to the user's request. Do not say you are ready and do not ask what the user wants. Do not output raw tool payloads, JSON, SVG, internal field names, function calls, or duplicate raw URLs. Use clean Markdown and cite/use only valid URLs returned by the tools when relevant. If a requested capability failed or is not configured, state that clearly instead of pretending it worked.`;
+const TOOL_TEST_INSTRUCTION = `The user explicitly wants to test the available tools. Use the agent_tool_test tool now. Do not merely describe the tools or say you are ready. The test must execute the safe tools and return a concise pass/fail/configuration report. Do not send emails or perform irreversible external actions during a test.`;
+
+function prepareMessages(messages: ChatMessage[], tools: ToolDefinition[]) {
+  const userText = lastUserText(messages);
+  if (!isToolTestRequest(userText) || !tools.some((tool) => tool.name === "agent_tool_test")) return messages;
+  return [...messages, { role: "user", content: TOOL_TEST_INSTRUCTION }];
+}
 
 class ResilientProvider implements AIProvider {
   constructor(private readonly primary: AIProvider, private readonly fallback: AIProvider) {}
 
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
-    try {
-      const result = await this.primary.chat(messages, tools);
-      if (tools.length === 0 && hasToolContext(messages) && isGenericOrRaw(result.text)) {
-        const retry = await this.primary.chat([...messages, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
-        if (!isGenericOrRaw(retry.text)) return retry;
-        const fallback = await this.fallback.chat([...messages, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
-        if (!isGenericOrRaw(fallback.text)) return fallback;
-      }
-      return result;
-    } catch (primaryError) {
+    const prepared = prepareMessages(messages, tools);
+    let primaryError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
-        return await this.fallback.chat(messages, tools);
-      } catch (fallbackError) {
-        const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
-        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
-        throw new Error(`AI providers failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`);
+        const result = await this.primary.chat(prepared, tools);
+        if (tools.length === 0 && hasToolContext(prepared) && !validateFinalText(result.text)) {
+          const retry = await this.primary.chat([...prepared, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
+          if (validateFinalText(retry.text)) return retry;
+          const fallback = await this.fallback.chat([...prepared, { role: "user", content: CLEAN_SYNTHESIS_INSTRUCTION }], []);
+          if (validateFinalText(fallback.text)) return fallback;
+        }
+        return result;
+      } catch (error) {
+        primaryError = error;
+        if (attempt < MAX_RETRIES) await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
       }
+    }
+    try {
+      return await this.fallback.chat(prepared, tools);
+    } catch (fallbackError) {
+      const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
+      throw new Error(`AI providers failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`);
     }
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
+    const prepared = prepareMessages(messages, tools);
     try {
-      return await this.primary.chatStream(messages, tools, onText);
+      const result = await this.primary.chatStream(prepared, tools, onText);
+      if (result.text && !validateFinalText(result.text) && tools.length === 0 && hasToolContext(prepared)) {
+        return this.chat(prepared, []);
+      }
+      return result;
     } catch (primaryError) {
       try {
-        return await this.fallback.chatStream(messages, tools, onText);
+        return await this.fallback.chatStream(prepared, tools, onText);
       } catch (fallbackError) {
         const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
         const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
@@ -87,7 +118,7 @@ async function readSse(response: Response, onData: (data: any) => void) {
     for (const block of blocks) {
       const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
       if (!data || data === "[DONE]") continue;
-      try { onData(JSON.parse(data)); } catch { /* ignore incomplete/non-JSON SSE blocks */ }
+      try { onData(JSON.parse(data)); } catch { /* ignore malformed SSE blocks */ }
     }
   }
   buffer += decoder.decode();
@@ -107,11 +138,10 @@ class GeminiProvider implements AIProvider {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
-    const data = await response.json();
-    return parseGeminiResponse(data);
+    return parseGeminiResponse(await response.json());
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
@@ -123,7 +153,7 @@ class GeminiProvider implements AIProvider {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
     const parts: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> = [];
@@ -153,11 +183,10 @@ class OpenRouterProvider implements AIProvider {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
       body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
-    const data = await response.json();
-    return parseOpenRouterResponse(data);
+    return parseOpenRouterResponse(await response.json());
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
@@ -166,7 +195,7 @@ class OpenRouterProvider implements AIProvider {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "HTTP-Referer": process.env.APP_URL || "http://localhost:3000", "X-Title": "Sanmine Space" },
       body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, stream: true, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
     let text = "";
