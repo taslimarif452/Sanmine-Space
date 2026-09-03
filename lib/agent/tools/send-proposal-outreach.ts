@@ -1,6 +1,7 @@
 import { getProvider, type ChatMessage } from "@/lib/ai/provider";
 import { sql } from "@/lib/db/neon";
 import { sendGmailMessage } from "@/lib/email/gmail";
+import { createApproval, ensureProductionSchema } from "@/lib/agent/production";
 import type { AgentTool } from "@/lib/agent/tools/types";
 
 type Target = { name: string; country?: string; subscribers?: string | number; total_views?: string | number; niche?: string; channel_url?: string; description?: string };
@@ -12,19 +13,18 @@ async function findContact(name: string) { const apiKey=process.env.TAVILY_API_K
 
 export const sendProposalOutreachTool: AgentTool = {
   name:"send_proposal_outreach",
-  description:"For an explicit request to send proposals, verify Gmail, research public business contact emails, personalize the proposal from supplied evidence, and send only to verified public contacts. Never guess an address.",
+  description:"For an explicit request to send proposals, verify Gmail, research public business contact emails, personalize the proposal from supplied evidence, and send only after a separate user approval. Never guess an address.",
   parameters:{type:"object",properties:{user_id:{type:"string"},targets:{type:"array",items:{type:"object",properties:{name:{type:"string"},country:{type:"string"},subscribers:{type:"string"},total_views:{type:"string"},niche:{type:"string"},channel_url:{type:"string"},description:{type:"string"}},required:["name"]}},offer:{type:"string"},sender_name:{type:"string"},user_language:{type:"string"}},required:["targets","offer"]},
   execute:async(args)=>{
-    const userId=clean(args.user_id); const targets=Array.isArray(args.targets)?(args.targets as Target[]).slice(0,20):[]; const offer=clean(args.offer); const senderName=clean(args.sender_name)||"Sanmine Space"; const language=clean(args.user_language)||"en";
+    const userId=clean(args.user_id); const targets=Array.isArray(args.targets)?(args.targets as Target[]).slice(0,20):[]; const offer=clean(args.offer); const senderName=clean(args.sender_name)||"Samine AI Agent"; const language=clean(args.user_language)||"en";
     if(!userId)return{status:"error",message:"Authenticated user context is missing."}; if(!targets.length)return{status:"error",message:"No prospects were supplied."}; if(!offer)return{status:"error",message:"An offer is required."};
     const connections=await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} ORDER BY updated_at DESC`;
     const gmail=connections.find(row=>String((row as any).provider)==="google") as {id:string;provider:string;email:string}|undefined;
     const microsoft=connections.find(row=>String((row as any).provider)==="microsoft") as {id:string;provider:string;email:string}|undefined;
     if(!gmail&&!microsoft)return{status:"needs_connection",sent_count:0,skipped_count:0,failed_count:0,connected_providers:[],message:connectionMessage(language)};
     if(!gmail)return{status:"provider_unavailable",sent_count:0,skipped_count:0,failed_count:0,connected_providers:["microsoft"],message:"Outlook sending is not enabled. Connect Gmail from Plugins."};
-    const gmailConnection: {id:string;provider:string;email:string} = gmail!;
-    const sent:Array<{creator:string;email:string;subject:string;message_id:string}>=[]; const skipped:Array<{creator:string;reason:string;sources?:{title:string;url:string}[]}>=[]; const failed:Array<{creator:string;reason:string}> = [];
-    for(const target of targets){ const name=clean(target.name)||"Creator"; try{ const contact=await findContact(name); if(!contact.email){skipped.push({creator:name,reason:contact.status==="not_configured"?"Public contact research is not configured.":"No public business/contact email was found.",sources:contact.sources.map(s=>({title:s.title,url:s.url}))});continue;} const research=[`YouTube creator: ${name}`,target.country?`Country: ${target.country}`:"",target.subscribers?`Subscribers: ${target.subscribers}`:"",target.total_views?`Total views: ${target.total_views}`:"",target.niche?`Niche: ${target.niche}`:"",target.channel_url?`Channel: ${target.channel_url}`:"",target.description?`Channel description: ${target.description}`:"",`Public contact research found: ${contact.email}`].filter(Boolean).join("\n"); const prompt=`Write a concise personalized website proposal email for a YouTube creator. Return ONLY a Subject: line followed by the body. Do not claim you literally watched a video; say you came across/reviewed their channel using the supplied research. Do not invent facts, pricing, clients, guarantees, or contact details.\n\nResearch:\n${research}\n\nOffer:${offer}\nSender:${senderName}`; const result=await getProvider().chat([{role:"system",content:"You are a senior B2B outreach copywriter. Personalize only from evidence."},{role:"user",content:prompt}] as ChatMessage[]); if(!result.text)throw new Error("Email generation returned an empty response."); const subject=result.text.match(/^Subject:\s*(.+)$/im)?.[1]?.trim()||`Website proposal for ${name}`; const body=result.text.replace(/^Subject:\s*.+\n?/im,"").trim(); const sentResult=await sendGmailMessage(userId,gmailConnection.id,{to:contact.email,subject,body}); sent.push({creator:name,email:contact.email,subject,message_id:sentResult.id}); }catch(error){failed.push({creator:name,reason:error instanceof Error?error.message:"Unable to send proposal email."});} }
-    return{status:"completed",provider:"google",sender:gmailConnection.email,sent_count:sent.length,skipped_count:skipped.length,failed_count:failed.length,sent,skipped,failed};
+    await ensureProductionSchema();
+    const approval=await createApproval(userId,null,"send_proposal_outreach",{targets,offer,senderName,language,gmailConnectionId:gmail.id});
+    return {status:"approval_required",approval_id:String(approval.id),approval_status:"pending",provider:"google",sender:gmail.email,target_count:targets.length,message:"The outreach is prepared for review. No email has been sent. Approve this action to continue."};
   }
 };
