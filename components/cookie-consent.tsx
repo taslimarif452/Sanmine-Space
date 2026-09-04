@@ -34,8 +34,8 @@ export function CookieConsent(){
 
   if(!visible)return null;
 
-  return <div className="fixed inset-x-0 bottom-0 z-[100] w-screen p-0">
-    <section role="dialog" aria-label="Cookie settings" className="w-full rounded-t-[14px] border border-b-0 border-[#383838] bg-[#171717] px-4 py-4 text-[#f5f5f5] shadow-[0_20px_70px_rgba(45,42,35,.28)] sm:px-5 sm:py-4.5">
+  return <div className="fixed inset-x-0 bottom-0 z-[100] w-full p-0">
+    <section role="dialog" aria-label="Cookie settings" className="w-full rounded-t-[14px] border border-b-0 border-[#383838] bg-[#171717] px-4 py-5 text-[#f5f5f5] shadow-[0_20px_70px_rgba(45,42,35,.28)] sm:px-5 sm:py-5">
       <h2 className="text-[19px] font-medium tracking-[-.025em]">Cookie settings</h2>
       <p className="mt-1.5 text-[13.5px] leading-[1.45] text-[#bdbdb7]">
         We use cookies to deliver and improve our services, analyze site usage, and, if you agree, to personalize your experience. Read our <a href="/privacy" className="underline underline-offset-2 hover:text-white">Privacy Policy</a> and <a href="/terms" className="underline underline-offset-2 hover:text-white">Terms & Conditions</a>.
