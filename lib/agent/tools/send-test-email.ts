@@ -11,29 +11,40 @@ export const sendTestEmailTool: AgentTool = {
     const userId = typeof args.user_id === "string" ? args.user_id.trim() : "";
     if (!userId) return { status: "error", message: "Authenticated user context is missing." };
 
-    await ensureProductionSchema();
-    const rows = await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
-    const gmail = rows[0] as { id: string; provider: string; email: string } | undefined;
-    if (!gmail) {
+    try {
+      await ensureProductionSchema();
+      const rows = await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
+      const gmail = rows[0] as { id: string; provider: string; email: string; expires_at?: number | string | null } | undefined;
+      if (!gmail) {
+        return {
+          status: "needs_connection",
+          connected: false,
+          message: "Gmail is not connected for this signed-in account. Connect Gmail from Plugins before sending a test email.",
+        };
+      }
+
+      const message = typeof args.message === "string" && args.message.trim() ? args.message.trim().slice(0, 2000) : "Hi";
+      const result = await sendGmailMessage(userId, gmail.id, {
+        to: gmail.email,
+        subject: "Sanmine Space email test",
+        body: message,
+      });
+
       return {
-        status: "needs_connection",
-        message: "Gmail is not connected. Connect Gmail from Plugins before sending a test email.",
+        status: "sent",
+        connected: true,
+        to: gmail.email,
+        from: result.from,
+        message_id: result.id,
+        message: "Test email sent successfully to the connected Gmail address.",
+      };
+    } catch (error) {
+      console.error("send_test_email failed", error);
+      return {
+        status: "error",
+        connected: false,
+        message: error instanceof Error ? error.message : "Test email send failed.",
       };
     }
-
-    const message = typeof args.message === "string" && args.message.trim() ? args.message.trim().slice(0, 2000) : "Hi";
-    const result = await sendGmailMessage(userId, gmail.id, {
-      to: gmail.email,
-      subject: "Sanmine Space email test",
-      body: message,
-    });
-
-    return {
-      status: "sent",
-      to: gmail.email,
-      from: result.from,
-      message_id: result.id,
-      message: "Test email sent successfully to the connected Gmail address.",
-    };
   },
 };
