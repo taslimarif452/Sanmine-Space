@@ -1,0 +1,48 @@
+name: Fix combined research outreach routing
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch deterministic combined outreach flow
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('lib/agent/agent.ts')
+          text = path.read_text()
+
+          marker = 'const isExplicitSendRequest = (message: string) => /\\bsend\\b|\\bemail\\b|\\bmail\\b|\\bhej(?:o|\\s+do)?\\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);'
+          helper = '''\nconst isCombinedBusinessOutreachRequest = (message: string) =>\n  isExplicitSendRequest(message) &&\n  isWebResearchRequest(message) &&\n  /\\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\\b/i.test(message) &&\n  /no\\s+(a\\s+)?website|without\\s+(a\\s+)?website|website\\s*(nahi|nahin|nhi|nh)|website\\s*(is\\s*)?not/i.test(message);\n'''
+          if 'const isCombinedBusinessOutreachRequest' not in text:
+              if marker not in text:
+                  raise SystemExit('routing marker not found')
+              text = text.replace(marker, marker + helper, 1)
+
+          old = '  if (isExplicitSendRequest(userMessage) && userId && parseResearchTargets(history).length) {'
+          new = '''  if (isCombinedBusinessOutreachRequest(userMessage) && userId && !parseResearchTargets(history).length) {\n    const searchTool = getTool("search_web");\n    const sendTool = getTool("send_proposal_outreach");\n    if (!searchTool || !sendTool) {\n      return { response: "Research or outreach is not connected in this workspace yet.", events };\n    }\n\n    const searchQueries = [\n      `${userMessage} real local businesses public contact email`,\n      `small business no website public email contact`,\n      `local business without website contact email`,\n    ];\n    const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];\n    for (const query of searchQueries) {\n      emit({ type: "tool_start", name: "search_web", toolCallId: `combined-search-${events.length}` });\n      try {\n        const result = await searchTool.execute({ query, limit: 10 });\n        emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-${events.length}`, result });\n        const rows = Array.isArray((result as any)?.results) ? (result as any).results : [];\n        for (const row of rows) {\n          if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined });\n        }\n      } catch (error) {\n        emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-error-${events.length}`, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } });\n      }\n      if (searchResults.length >= 10) break;\n    }\n\n    const seen = new Set<string>();\n    const targets = searchResults\n      .filter((row) => {\n        const key = (row.title || row.url || "").toLowerCase();\n        if (!key || seen.has(key)) return false;\n        seen.add(key);\n        return !/\\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\\b/i.test(row.title || "");\n      })\n      .slice(0, 10)\n      .map((row) => ({ name: row.title!.replace(/\\s*[|—-]\\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));\n\n    if (!targets.length) {\n      return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };\n    }\n\n    emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" });\n    let sendResult: unknown;\n    try {\n      sendResult = await sendTool.execute({\n        user_id: userId,\n        targets,\n        offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.",\n        sender_name: "Sanmine Space",\n        user_language: detectLanguage(userMessage),\n      });\n    } catch (error) {\n      sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };\n    }\n    emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult });\n    return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };\n  }\n\n  if (isExplicitSendRequest(userMessage) && userId && parseResearchTargets(history).length) {'''
+          if old not in text:
+              raise SystemExit('explicit send block marker not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+      - name: Commit and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/agent/agent.ts
+          git commit -m 'fix: execute combined business research and outreach deterministically'
+          git rm .github/workflows/fix-combined-outreach.yml
+          git commit -m 'chore: remove one-time combined outreach patch workflow'
+          git push
