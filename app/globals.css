@@ -23,3 +23,8 @@ a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>sv
 span.mb-3.inline-flex.items-center.gap-2.px-1.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:9px!important;font-size:14px!important;line-height:20px!important;color:#77746d!important}
 span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:8px!important;font-size:14px!important;line-height:20px!important;color:#9a968e!important}
 span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm svg{flex:none!important}
+/* The chat page also renders activity inline. Hide only the old fixed overlay so Thinking/status is shown once in the message flow. */
+main.relative.flex.h-screen.min-h-0.overflow-hidden>span.pointer-events-none.fixed.bottom-28.z-40{display:none!important}
+/* Plugins and Campaigns now get the exact shared workspace sidebar from AuthGate. Hide their old duplicate sidebar only. */
+.sanmine-workspace-shell main>aside.w-\[286px\]{display:none!important}
+.sanmine-workspace-shell main>section{width:100%;min-width:0}
