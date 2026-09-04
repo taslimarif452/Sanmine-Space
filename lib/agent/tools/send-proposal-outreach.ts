@@ -125,6 +125,7 @@ export const sendProposalOutreachTool: AgentTool = {
   description: "For an explicit user request to send proposals, verify Gmail, find public business/contact emails, personalize a concise proposal email from supplied evidence, and send it immediately. Never guess an email address. Skip prospects without a public email and report them.",
   parameters: { type: "object", properties: {
     user_id: { type: "string" },
+    user_email: { type: "string" },
     targets: { type: "array", items: { type: "object", properties: {
       name: { type: "string" }, email: { type: "string" }, country: { type: "string" }, subscribers: { type: "string" }, total_views: { type: "string" }, niche: { type: "string" }, channel_url: { type: "string" }, description: { type: "string" }
     }, required: ["name"] } },
@@ -132,6 +133,7 @@ export const sendProposalOutreachTool: AgentTool = {
   }, required: ["targets", "offer"] },
   execute: async (args) => {
     const userId = clean(args.user_id);
+    const authEmail = clean(args.user_email).toLowerCase();
     const suppliedTargets = Array.isArray(args.targets) ? (args.targets as Target[]).slice(0, 10) : [];
     const offer = clean(args.offer);
     const language = clean(args.user_language) || "en";
@@ -139,12 +141,15 @@ export const sendProposalOutreachTool: AgentTool = {
     if (!suppliedTargets.length) return { status: "error", message: "No prospects were supplied." };
     if (!offer) return { status: "error", message: "An offer is required." };
 
+    // Resolve the sending connection from the authenticated identity. The chat
+    // route supplies the Firebase email as a second, explicit identity key.
+    // UID is always preferred; email is only a fallback for legacy connections.
     const userRows = await sql`SELECT email FROM users WHERE id=${userId} LIMIT 1`;
-    const userEmail = String((userRows[0] as any)?.email || "").trim().toLowerCase();
+    const userEmail = authEmail || String((userRows[0] as any)?.email || "").trim().toLowerCase();
     const connections = userEmail
-      ? await sql`SELECT id, provider, email FROM email_connections WHERE (user_id=${userId} OR LOWER(email)=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC`
+      ? await sql`SELECT id, provider, email FROM email_connections WHERE (user_id=${userId} OR LOWER(TRIM(email))=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC`
       : await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} ORDER BY updated_at DESC`;
-    const gmail = connections.find((row) => String((row as any).provider) === "google") as { id: string; provider: string; email: string } | undefined;
+    const gmail = connections.find((row) => ["google", "gmail"].includes(String((row as any).provider).trim().toLowerCase())) as { id: string; provider: string; email: string } | undefined;
     if (!gmail) return { status: "needs_connection", sent: [], skipped: [], failed: [], connected_providers: connections.map((row) => String((row as any).provider)), message: connectionMessage(language) };
 
     await ensureProductionSchema();
@@ -168,7 +173,7 @@ export const sendProposalOutreachTool: AgentTool = {
       try {
         const result = await sendGmailMessage(userId, gmail.id, { to: email, subject, body });
         const approval = await sql`INSERT INTO email_approvals (user_id, connection_id, recipient, subject, body, status, approved_at, sent_at, provider_message_id) VALUES (${userId}, ${gmail.id}, ${email}, ${subject}, ${body}, 'sent', NOW(), NOW(), ${result.id || null}) RETURNING id`;
-        await sql`INSERT INTO email_events (user_id, approval_id, recipient, event_type, provider_message_id, provider_thread_id, metadata) VALUES (${userId}, ${approval[0]?.id || null}, ${email}, 'sent', ${result.id || null}, ${result.threadId || null}, ${JSON.stringify({ source: "agent_outreach" })}::jsonb)`;
+        await sql`INSERT INTO email_events (user_id, approval_id, recipient, event_type, provider_message_id, provider_thread_id, metadata) VALUES (${userId}, ${approval[0]?.id || null}, ${email}, 'sent', ${result.id || null}, ${result.threadId || null}, ${JSON.stringify({ source: "agent_outreach" })}::jsonb`;
         sent.push({ creator: clean(target.name) || "Prospect", email, subject, message_id: result.id || "" });
       } catch (error) {
         failed.push({ creator: clean(target.name) || "Prospect", email, reason: error instanceof Error ? error.message : "Gmail send failed." });
