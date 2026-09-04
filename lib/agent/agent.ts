@@ -43,6 +43,12 @@ const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiy
 const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bhej/i.test(message);
 const isTestEmailRequest = (message: string) => /(test|testing|simple\s+(hi|hello|message|msg)|simple\s+email).*(email|mail)|(email|mail).*(test|testing|simple\s+(hi|hello|message|msg))/i.test(message) && /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message);
 const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
+const isCombinedBusinessOutreachRequest = (message: string) =>
+  isExplicitSendRequest(message) &&
+  isWebResearchRequest(message) &&
+  /\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message) &&
+  /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
+
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
 
 function detectLanguage(text: string) {
@@ -181,6 +187,66 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     emitThinking();
     streamText(response);
     return { response, events };
+  }
+
+  if (isCombinedBusinessOutreachRequest(userMessage) && userId && !parseResearchTargets(history).length) {
+    const searchTool = getTool("search_web");
+    const sendTool = getTool("send_proposal_outreach");
+    if (!searchTool || !sendTool) {
+      return { response: "Research or outreach is not connected in this workspace yet.", events };
+    }
+
+    const searchQueries = [
+      `${userMessage} real local businesses public contact email`,
+      `small business no website public email contact`,
+      `local business without website contact email`,
+    ];
+    const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];
+    for (const query of searchQueries) {
+      emit({ type: "tool_start", name: "search_web", toolCallId: `combined-search-${events.length}` });
+      try {
+        const result = await searchTool.execute({ query, limit: 10 });
+        emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-${events.length}`, result });
+        const rows = Array.isArray((result as any)?.results) ? (result as any).results : [];
+        for (const row of rows) {
+          if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined });
+        }
+      } catch (error) {
+        emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-error-${events.length}`, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } });
+      }
+      if (searchResults.length >= 10) break;
+    }
+
+    const seen = new Set<string>();
+    const targets = searchResults
+      .filter((row) => {
+        const key = (row.title || row.url || "").toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return !/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title || "");
+      })
+      .slice(0, 10)
+      .map((row) => ({ name: row.title!.replace(/\s*[|—-]\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));
+
+    if (!targets.length) {
+      return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };
+    }
+
+    emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" });
+    let sendResult: unknown;
+    try {
+      sendResult = await sendTool.execute({
+        user_id: userId,
+        targets,
+        offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.",
+        sender_name: "Sanmine Space",
+        user_language: detectLanguage(userMessage),
+      });
+    } catch (error) {
+      sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
+    }
+    emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult });
+    return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
   }
 
   if (isExplicitSendRequest(userMessage) && userId && parseResearchTargets(history).length) {
