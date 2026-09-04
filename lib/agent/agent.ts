@@ -43,12 +43,7 @@ const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiy
 const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bhej/i.test(message);
 const isTestEmailRequest = (message: string) => /(test|testing|simple\s+(hi|hello|message|msg)|simple\s+email).*(email|mail)|(email|mail).*(test|testing|simple\s+(hi|hello|message|msg))/i.test(message) && /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message);
 const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
-const isCombinedBusinessOutreachRequest = (message: string) =>
-  isExplicitSendRequest(message) &&
-  isWebResearchRequest(message) &&
-  /\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message) &&
-  /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
-
+const isCombinedBusinessOutreachRequest = (message: string) => isExplicitSendRequest(message) && isWebResearchRequest(message) && /\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message) && /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
 
 function detectLanguage(text: string) {
@@ -62,9 +57,7 @@ function detectLanguage(text: string) {
   return "en";
 }
 
-function stripCell(value: string) {
-  return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
-}
+function stripCell(value: string) { return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim(); }
 
 function parseResearchTargets(history: ChatMessage[]) {
   for (const message of [...history].reverse()) {
@@ -119,52 +112,26 @@ function buildSendSummary(result: any, language: string) {
   }[language as "hi" | "bn" | "es" | "fr" | "en"] || undefined;
   const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." };
   const processed = `${l.processed} **${sent.length + skipped.length + failed.length}** ${l.prospects}`;
-  const lines = [
-    l.title,
-    `${processed}${result?.sender ? ` (${result.sender})` : ""}.`,
-    "",
-    sent.length ? l.sent : `${l.sent}\n${l.none}`,
-    ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []),
-    "",
-    skipped.length ? l.skipped : "",
-    ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []),
-    "",
-    failed.length ? l.failed : "",
-    ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []),
-    "",
-    l.proof,
-  ].filter(Boolean);
+  const lines = [l.title, `${processed}${result?.sender ? ` (${result.sender})` : ""}.`, "", sent.length ? l.sent : `${l.sent}\n${l.none}`, ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []), "", skipped.length ? l.skipped : "", ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []), "", failed.length ? l.failed : "", ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []), "", l.proof].filter(Boolean);
   return lines.join("\n");
 }
 
-export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void) {
+export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
   const provider = getProvider();
   const tools = getToolDefinitions();
   const events: AgentEvent[] = [];
   const emit = (event: AgentEvent) => { events.push(event); onEvent?.(event); };
   const streamText = (delta: string) => { if (delta) onText?.(delta); };
   const emitThinking = () => emit({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
-  const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...history.slice(-12),
-    { role: "user", content: userMessage },
-  ];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.slice(-12), { role: "user", content: userMessage }];
 
   if (isYouTubeRequest(userMessage)) {
     const youtube = getTool("youtube_search");
     if (!youtube) return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
     emit({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
     let result: unknown;
-    try {
-      result = await youtube.execute({
-        query: userMessage,
-        limit: 10,
-        type: isCreatorRequest(userMessage) || isNoWebsiteRequest(userMessage) ? "creator" : "video",
-        region_code: isIndiaRequest(userMessage) ? "IN" : undefined,
-      });
-    } catch (error) {
-      result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." };
-    }
+    try { result = await youtube.execute({ query: userMessage, limit: 10, type: isCreatorRequest(userMessage) || isNoWebsiteRequest(userMessage) ? "creator" : "video", region_code: isIndiaRequest(userMessage) ? "IN" : undefined }); }
+    catch (error) { result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." }; }
     emit({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
@@ -174,16 +141,11 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
     emit({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
     let result: unknown;
-    try {
-      result = await testTool.execute({ user_id: userId, message: "Hi" });
-    } catch (error) {
-      result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." };
-    }
+    try { result = await testTool.execute({ user_id: userId, user_email: userEmail, message: "Hi" }); }
+    catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." }; }
     emit({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
     const language = detectLanguage(userMessage);
-    const response = result && typeof result === "object" && (result as any).status === "sent"
-      ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`)
-      : String((result as any)?.message || "Test email send nahi ho paya.");
+    const response = result && typeof result === "object" && (result as any).status === "sent" ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`) : String((result as any)?.message || "Test email send nahi ho paya.");
     emitThinking();
     streamText(response);
     return { response, events };
@@ -192,15 +154,8 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
   if (isCombinedBusinessOutreachRequest(userMessage) && userId && !parseResearchTargets(history).length) {
     const searchTool = getTool("search_web");
     const sendTool = getTool("send_proposal_outreach");
-    if (!searchTool || !sendTool) {
-      return { response: "Research or outreach is not connected in this workspace yet.", events };
-    }
-
-    const searchQueries = [
-      `${userMessage} real local businesses public contact email`,
-      `small business no website public email contact`,
-      `local business without website contact email`,
-    ];
+    if (!searchTool || !sendTool) return { response: "Research or outreach is not connected in this workspace yet.", events };
+    const searchQueries = [`${userMessage} real local businesses public contact email`, `small business no website public email contact`, `local business without website contact email`];
     const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];
     for (const query of searchQueries) {
       emit({ type: "tool_start", name: "search_web", toolCallId: `combined-search-${events.length}` });
@@ -208,43 +163,17 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
         const result = await searchTool.execute({ query, limit: 10 });
         emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-${events.length}`, result });
         const rows = Array.isArray((result as any)?.results) ? (result as any).results : [];
-        for (const row of rows) {
-          if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined });
-        }
-      } catch (error) {
-        emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-error-${events.length}`, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } });
-      }
+        for (const row of rows) if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined });
+      } catch (error) { emit({ type: "tool_result", name: "search_web", toolCallId: `combined-search-error-${events.length}`, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } }); }
       if (searchResults.length >= 10) break;
     }
-
     const seen = new Set<string>();
-    const targets = searchResults
-      .filter((row) => {
-        const key = (row.title || row.url || "").toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return !/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title || "");
-      })
-      .slice(0, 10)
-      .map((row) => ({ name: row.title!.replace(/\s*[|—-]\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));
-
-    if (!targets.length) {
-      return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };
-    }
-
+    const targets = searchResults.filter((row) => { const key = (row.title || row.url || "").toLowerCase(); if (!key || seen.has(key)) return false; seen.add(key); return !/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title || ""); }).slice(0, 10).map((row) => ({ name: row.title!.replace(/\s*[|—-]\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));
+    if (!targets.length) return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };
     emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" });
     let sendResult: unknown;
-    try {
-      sendResult = await sendTool.execute({
-        user_id: userId,
-        targets,
-        offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.",
-        sender_name: "Sanmine Space",
-        user_language: detectLanguage(userMessage),
-      });
-    } catch (error) {
-      sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
-    }
+    try { sendResult = await sendTool.execute({ user_id: userId, user_email: userEmail, targets, offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); }
+    catch (error) { sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
     emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult });
     return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
   }
@@ -254,20 +183,10 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     const targets = parseResearchTargets(history);
     if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
     if (!targets.length) return { response: "I can send the proposals, but I could not safely recover the creator list from the previous research result. Please run the creator search again, then ask me to send the proposals.", events };
-
     emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
     let result: unknown;
-    try {
-      result = await sendTool.execute({
-        user_id: userId,
-        targets,
-        offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.",
-        sender_name: "Sanmine Space",
-        user_language: detectLanguage(userMessage),
-      });
-    } catch (error) {
-      result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." };
-    }
+    try { result = await sendTool.execute({ user_id: userId, user_email: userEmail, targets, offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); }
+    catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
     emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
     const response = buildSendSummary(result, detectLanguage(userMessage));
     emitThinking();
@@ -276,21 +195,14 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
   }
 
   const researchMode = !isYouTubeRequest(userMessage) && isWebResearchRequest(userMessage);
-
-  // For explicit web-research requests, start the real search before asking the model to plan
-  // more tool calls. This prevents a streamed tool-selection request from appearing stuck at
-  // "Thinking" and guarantees the user sees concrete research progress immediately.
   if (researchMode) {
     const searchTool = getTool("search_web");
     if (searchTool) {
       const searchId = `forced-web-search-${Date.now()}`;
       emit({ type: "tool_start", name: "search_web", toolCallId: searchId });
       let result: unknown;
-      try {
-        result = await searchTool.execute({ query: userMessage, limit: 8 });
-      } catch (error) {
-        result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." };
-      }
+      try { result = await searchTool.execute({ query: userMessage, limit: 8 }); }
+      catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." }; }
       emit({ type: "tool_result", name: "search_web", toolCallId: searchId, result });
       messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
     }
@@ -304,7 +216,6 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       for (let i = 0; i < finalText.length; i += 24) streamText(finalText.slice(i, i + 24));
       return { response: finalText, events };
     }
-
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
       if ((isYouTubeRequest(userMessage) && call.name === "youtube_search") || (researchMode && call.name === "search_web")) {
@@ -316,18 +227,15 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
       if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
       else {
         try {
-          const argumentsForTool = call.name === "send_proposal_outreach" && userId ? { ...call.arguments, user_id: userId } : call.arguments;
+          const argumentsForTool = (call.name === "send_proposal_outreach" || call.name === "send_test_email") && userId ? { ...call.arguments, user_id: userId, user_email: userEmail } : call.arguments;
           result = await tool.execute(argumentsForTool);
-        } catch (error) {
-          result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." };
-        }
+        } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; }
       }
       emit({ type: "tool_result", name: call.name, toolCallId: call.id, result });
       if (response.text) messages.push({ role: "assistant", content: response.text });
       messages.push({ role: "user", content: `Tool result for ${call.name} (call ${call.id}):\n${JSON.stringify(result)}` });
     }
   }
-
   const response = "I reached the tool-call limit for this request. Please try the task again.";
   streamText(response);
   return { response, events };
