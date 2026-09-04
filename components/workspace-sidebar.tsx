@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Send, Trash2, UserCircle } from "lucide-react";
+import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Send, SquarePen, Trash2, UserCircle } from "lucide-react";
 import { signOutCurrentUser } from "@/lib/auth/firebase-client";
 import { EmailConnections } from "@/components/email-connections";
 
@@ -64,7 +64,7 @@ export function WorkspaceSidebar({user}:{user:User}){
         <button onClick={()=>setSide(v=>!v)} className="grid h-8 w-8 place-items-center rounded-lg text-[#5f5b54] hover:bg-black/5" aria-label={side?"Collapse sidebar":"Expand sidebar"}>{side?<PanelLeftClose size={18}/>:<PanelLeftOpen size={18}/>}</button>
       </div>
       <div className="space-y-1">
-        <button onClick={fresh} className={`flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${side?"gap-2 px-3":"justify-center"}`} aria-label="New chat"><Pencil size={17}/>{side&&"New chat"}</button>
+        <button onClick={fresh} className={`flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${side?"gap-2 px-3":"justify-center"}`} aria-label="New chat"><SquarePen size={17}/>{side&&"New chat"}</button>
         <button onClick={()=>{setMobileOpen(false);router.push("/plugins")}} className={`flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${pathname==="/plugins"?"bg-black/5":""} ${side?"gap-2 px-3":"justify-center"}`} aria-label="Plugins"><Plug size={17}/>{side&&"Plugins"}</button>
         <button onClick={()=>{setMobileOpen(false);router.push("/campaigns")}} className={`flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-black/5 ${pathname==="/campaigns"?"bg-black/5":""} ${side?"gap-2 px-3":"justify-center"}`} aria-label="Campaigns"><Send size={17}/>{side&&"Campaigns"}</button>
       </div>
