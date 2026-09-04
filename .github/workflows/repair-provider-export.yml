@@ -22,23 +22,24 @@ jobs:
           git add lib/ai/provider.ts
           git commit -m "fix: restore getProvider export" || true
           git push origin main
-      - name: Repair chat streaming syntax regression
+      - name: Repair chat page syntax regressions
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
           p = Path("app/page.tsx")
           s = p.read_text()
-          # Remove the accidental array/parenthesis close inserted after the delta handler.
-          fixed = re.sub(r'\}\]\);\}\s*if\(d\.type===\"done\"\)', '}\n        if(d.type==="done")', s, count=1)
-          if fixed != s:
-              p.write_text(fixed)
+          # Repair the malformed close accidentally inserted after the delta handler.
+          s = re.sub(r'\}\]\);\}\s*if\(d\.type===\"done\"\)', '}\n        if(d.type==="done")', s, count=1)
+          # The page renders the status state directly; no label() helper exists.
+          s = s.replace('{label(status)}', '{status}')
+          p.write_text(s)
           PY
           if ! git diff --quiet -- app/page.tsx; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add app/page.tsx
-            git commit -m "fix: repair chat streaming syntax"
+            git commit -m "fix: repair chat status rendering"
             git push origin main
           fi
       - uses: actions/setup-node@v4
