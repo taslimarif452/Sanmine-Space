@@ -183,7 +183,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     return { response, events };
   }
 
-  if (isExplicitSendRequest(userMessage) && userId) {
+  if (isExplicitSendRequest(userMessage) && userId && parseResearchTargets(history).length) {
     const sendTool = getTool("send_proposal_outreach");
     const targets = parseResearchTargets(history);
     if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
