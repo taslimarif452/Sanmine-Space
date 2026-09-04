@@ -70,7 +70,7 @@ export default function Home(){
       setMsgs([...base,{role:"assistant",content:displayed}]);
     },30);
   }
-}]);}
+}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
