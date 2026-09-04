@@ -1,0 +1,76 @@
+name: Fix chat UI streaming
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/page.tsx'
+      - '.github/workflows/fix-chat-ui.yml'
+  workflow_dispatch:
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[chat-ui-fix]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch chat UI
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/page.tsx')
+          s = p.read_text()
+
+          old_submit = '''  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);setMsgs(base);setText("");setEditingIndex(null);void send(q,base,active)};'''
+          new_submit = '''  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);void send(q,next,active)};'''
+          if old_submit not in s:
+              raise SystemExit('submit block not found')
+          s = s.replace(old_submit, new_submit, 1)
+
+          old_stream = '''        if(d.type==="delta"&&d.delta){
+  streamed+=d.delta;
+  setStatus("Writing answer");
+  if(!typeTimer){
+    typeTimer=setInterval(()=>{
+      if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+      displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
+      setMsgs([...base,{role:"assistant",content:displayed}]);
+    },30);
+  }
+}'''
+          new_stream = '''        if(d.type==="delta"&&d.delta){
+  streamed+=d.delta;
+  setStatus("Writing answer");
+  if(!typeTimer){
+    typeTimer=setInterval(()=>{
+      if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+      displayed=streamed.slice(0,displayed.length+1);
+      setMsgs([...base,{role:"assistant",content:displayed}]);
+    },18);
+  }
+}'''
+          if old_stream not in s:
+              raise SystemExit('stream block not found')
+          s = s.replace(old_stream, new_stream, 1)
+
+          old_finish = '''      if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'''
+          new_finish = '''      while(displayed.length<streamed.length){await new Promise(r=>setTimeout(r,18));}
+      if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");'''
+          if old_finish not in s:
+              raise SystemExit('finish block not found')
+          s = s.replace(old_finish, new_finish, 1)
+
+          old_progress = '''function Progress({status,steps}:{status:string;steps:string[]}){if(!status&&!steps.length)return null;return <><span className="mb-3 inline-flex items-center gap-2 text-[13px] text-[#77736b]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/>{status||"Thinking"}<Loader2 size={13} className="animate-spin"/></span>{steps.slice(-3,-1).map((s,i)=><span key={`${s}-${i}`} className="mb-3 hidden items-center gap-1.5 text-[13px] text-[#77736b] sm:inline-flex"><Check size={12}/> {s}</span>)}</>}'''
+          new_progress = '''function Progress({status,steps}:{status:string;steps:string[]}){if(!status&&!steps.length)return null;return <span className="mb-3 inline-flex items-center gap-2 text-[13px] text-[#77736b]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/>{status||steps.at(-1)||"Thinking"}<Loader2 size={13} className="animate-spin"/></span>}'''
+          if old_progress in s:
+              s = s.replace(old_progress, new_progress, 1)
+
+          p.write_text(s)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/page.tsx
+          git commit -m 'Fix visible user messages and natural chat typing [chat-ui-fix]'
+          git push
