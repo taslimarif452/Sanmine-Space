@@ -14,15 +14,11 @@ export const sendTestEmailTool: AgentTool = {
 
     try {
       await ensureProductionSchema();
-
-      // Resolve the mailbox using the authenticated Firebase UID first. The email
-      // fallback is important for connections created by an older deployment where
-      // the connection row may have been associated with a stale account identifier.
       const userRows = await sql`SELECT email FROM users WHERE id=${userId} LIMIT 1`;
       const userEmail = authEmail || String((userRows[0] as any)?.email || "").trim().toLowerCase();
       const rows = userEmail
-        ? await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE provider='google' AND (user_id=${userId} OR LOWER(email)=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`
-        : await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
+        ? await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE provider IN ('google','gmail') AND (user_id=${userId} OR LOWER(email)=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`
+        : await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE user_id=${userId} AND provider IN ('google','gmail') ORDER BY updated_at DESC LIMIT 1`;
       const gmail = rows[0] as { id: string; provider: string; email: string; expires_at?: number | string | null } | undefined;
       if (!gmail) {
         return {
