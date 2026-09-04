@@ -62,6 +62,41 @@ async function findContact(name: string, sourceUrl = "") {
   }
   return { status: "success", email: emails[0] ?? null, emails: [...new Set(emails)], sources: sources.slice(0, 8) };
 }
+function isContentTitle(name: string) {
+  return /\b(guide|how to|how-to|tips|directory|directories|list of|business ideas|find businesses|best small business|article|blog)\b/i.test(name);
+}
+async function discoverBusinessTargets(apiKey: string) {
+  const queries = [
+    `small local business without website contact email`,
+    `local shop salon restaurant business contact email no website`,
+  ];
+  const rows = (await Promise.all(queries.map(async (query) => {
+    try {
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, query, max_results: 10, search_depth: "basic", include_answer: false, include_raw_content: false }),
+        cache: "no-store", signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) return [] as TavilyResult[];
+      const data = await response.json() as { results?: TavilyResult[] };
+      return data.results ?? [];
+    } catch { return [] as TavilyResult[]; }
+  }))).flat();
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const title = clean(row.title);
+    const url = clean(row.url);
+    const key = title.toLowerCase();
+    if (!title || !url || seen.has(key) || isContentTitle(title)) return false;
+    if (/\b(reddit|youtube|quora|godaddy|oppora|origami|knapsackcreative|josh talks|sahu4you|leenkup)\b/i.test(url)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10).map((row) => ({
+    name: clean(row.title).replace(/\s*[|—-]\s*.*$/, "").trim(),
+    description: clean(row.content),
+    channel_url: clean(row.url),
+  }));
+}
 function buildEmail(target: Target, offer: string, language: string) {
   const name = target.name || "your business";
   const research = target.description ? ` I noticed that ${target.description.replace(/\s+/g, " ").slice(0, 220)}.` : "";
@@ -100,7 +135,14 @@ export const sendProposalOutreachTool: AgentTool = {
     const skipped: Array<Record<string, string>> = [];
     const failed: Array<Record<string, string>> = [];
 
-    for (const target of targets) {
+    let workingTargets = targets;
+    const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+    if (tavilyKey && workingTargets.every((target) => isContentTitle(clean(target.name)))) {
+      const discovered = await discoverBusinessTargets(tavilyKey);
+      if (discovered.length) workingTargets = discovered;
+    }
+
+    for (const target of workingTargets) {
       let email = clean(target.email).toLowerCase();
       const contact = email ? null : await findContact(clean(target.name), clean(target.channel_url));
       if (!email) email = clean(contact?.email).toLowerCase();
