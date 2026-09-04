@@ -7,11 +7,9 @@ button,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:defaul
 @keyframes pulse-soft{0%,100%{opacity:.45}50%{opacity:1}}.animate-pulse-soft{animation:pulse-soft 1.8s ease-in-out infinite}
 @media (min-width:768px){aside button[aria-label="Expand sidebar"]{background-image:url("https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png");background-position:center;background-repeat:no-repeat;background-size:28px 28px;transition:background-size .15s ease,background-color .15s ease}aside button[aria-label="Expand sidebar"] svg{opacity:0;transition:opacity .15s ease}aside button[aria-label="Expand sidebar"]:hover{background-image:none;background-color:rgba(0,0,0,.045)}aside button[aria-label="Expand sidebar"]:hover svg{opacity:1}}
 @media (max-width:767px){aside{width:70vw!important;max-width:70vw!important}aside>div:first-child{display:none!important}.sanmine-workspace-shell aside[data-sanmine-workspace-sidebar]>div:first-child{display:flex!important}section .flex.gap-3>img{display:none!important}aside>button{width:100%!important;min-height:44px!important;justify-content:flex-start!important;gap:10px!important;padding:10px 12px!important;border-radius:10px!important;background:transparent!important;border:0!important;box-shadow:none!important;font-size:0!important}aside>button::after{content:"New chat";font-size:14px;font-weight:500}aside [data-sanmine-plugins-link]{width:100%;margin-top:2px}aside [data-sanmine-plugins-link] a{width:100%;min-height:44px;padding:10px 12px;border-radius:10px;justify-content:flex-start;gap:10px}}
-/* The public landing hero must start with the eyebrow, not a second centered logo. */
 main.min-h-screen>section:first-of-type>div.mb-7.h-14.w-14{display:none!important}
 main.min-h-screen>footer{background-color:#262722!important}
 section .flex.gap-3>img{display:none}.campaign-page{scrollbar-gutter:stable}.campaign-field input,.campaign-field select,.campaign-field textarea{width:100%;border:1px solid #dcd9d1;border-radius:12px;background:#fff;color:#282721;padding:10px 12px;outline:none}.campaign-field input:focus,.campaign-field select:focus,.campaign-field textarea:focus{border-color:#b9b4aa;box-shadow:0 0 0 3px rgba(40,39,33,.06)}.campaign-field textarea{resize:vertical;min-height:110px}
-/* Chat research sources: text + favicon only; no source cards, borders, backgrounds, snippets, or action icons. */
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]{display:inline-flex!important;width:auto!important;max-width:100%!important;padding:2px 0!important;gap:7px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]:hover{background:transparent!important;box-shadow:none!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\] img{width:18px!important;height:18px!important;border-radius:4px!important}
@@ -19,12 +17,10 @@ a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>sp
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(2){font-size:10px!important;line-height:1.2!important;margin-top:1px!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>span>span:nth-child(3){display:none!important}
 a.group.flex.min-w-0.items-center.gap-3.rounded-xl.border.border-\[\#e5e1d8\]>svg{display:none!important}
-/* Live agent activity: plain stacked task lines, no card/container styling. */
 span.mb-3.inline-flex.items-center.gap-2.px-1.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:9px!important;font-size:14px!important;line-height:20px!important;color:#77746d!important}
 span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm{display:flex!important;align-items:center!important;width:max-content;max-width:100%;margin:0 0 8px!important;padding:0!important;gap:8px!important;font-size:14px!important;line-height:20px!important;color:#9a968e!important}
 span.mb-3.ml-3.inline-flex.items-center.gap-1\.5.text-sm svg{flex:none!important}
-/* The chat page also renders activity inline. Hide only the old fixed overlay so Thinking/status is shown once in the message flow. */
 main.relative.flex.h-screen.min-h-0.overflow-hidden>span.pointer-events-none.fixed.bottom-28.z-40{display:none!important}
-/* Plugins and Campaigns now get the exact shared workspace sidebar from AuthGate. Hide their old duplicate sidebar only. */
-.sanmine-workspace-shell main>aside.w-\[286px\]{display:none!important}
+/* Plugin and Campaign pages are wrapped by AuthGate's single shared WorkspaceSidebar. Hide only the page-local duplicate. */
+.sanmine-workspace-shell main>aside,.sanmine-workspace-shell main aside{display:none!important}
 .sanmine-workspace-shell main>section{width:100%;min-width:0}
