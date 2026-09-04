@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Check, Copy, ExternalLink, Loader2, LogOut, Menu, MoreHorizontal, Pencil, Plus, RefreshCw, Square, Trash2, UserCircle, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Loader2, LogOut, Menu, MoreHorizontal, Pencil, Plus, RefreshCw, Square, Trash2, UserCircle, X } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { EmailConnections } from "@/components/email-connections";
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -88,7 +88,7 @@ export default function Home(){
     finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
-  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);void send(q,next,active)};
+  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);void send(q,base,active)};
   const regenerate=(index:number)=>{if(loading)return;const userIndex=[...msgs.slice(0,index)].map((m,i)=>({m,i})).filter(x=>x.m.role==="user").pop()?.i;if(userIndex===undefined)return;const q=msgs[userIndex].content;const base=msgs.slice(0,userIndex);setMsgs(base);void send(q,base,active)};
   const editMessage=(index:number)=>{const m=msgs[index];if(m.role!=="user"||loading)return;setText(m.content);setEditingIndex(index);requestAnimationFrame(()=>scrollLatest("smooth"))};
   const copyMessage=async(index:number)=>{try{await navigator.clipboard.writeText(msgs[index].content);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{}};
