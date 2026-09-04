@@ -7,6 +7,7 @@ import { getFirebaseAuth, signInWithGoogle } from "@/lib/auth/firebase-client";
 import { PremiumLanding } from "@/components/premium-landing";
 import { PricingPortal } from "@/components/pricing-portal";
 import { CookieConsent } from "@/components/cookie-consent";
+import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 
 const AuthUserContext=createContext<User|null>(null);
 export function useAuthUser(){return useContext(AuthUserContext)}
@@ -20,7 +21,8 @@ export function AuthGate({children}:{children:React.ReactNode}){
   if(loading)return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted)]">Loading Sanmine Space…</div>;
   if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
   if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
-  return <AuthUserContext.Provider value={user}>{children}</AuthUserContext.Provider>;
+  const workspacePage=pathname==="/plugins"||pathname==="/campaigns";
+  return <AuthUserContext.Provider value={user}>{workspacePage?<div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden"><WorkspaceSidebar user={user}/><div className="min-w-0 flex-1">{children}</div></div>:children}</AuthUserContext.Provider>;
 }
 
 type LoginProps={error:string;busy:boolean;setBusy:(v:boolean)=>void;setError:(v:string)=>void;pathname:string};
