@@ -27,7 +27,7 @@ function collectSources(events:Event[]){const map=new Map<string,Source>();for(c
 function statusFor(name?:string){if(name==="search_web")return ["searching","Searching the web"];if(name==="open_page")return ["opening","Opening source"];if(name==="website_analyze")return ["analyzing","Analyzing website"];if(name?.includes("youtube"))return ["youtube","Searching YouTube"];if(name==="generate_proposal")return ["proposal","Generating proposal"];if(name==="generate_outreach_email")return ["email","Writing email"];if(name==="send_proposal_outreach")return ["sending","Preparing outreach"];return ["researching","Working on it"]}
 function Avatar({user}:{user:{photoURL?:string|null}}){return user.photoURL?<img src={user.photoURL} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover"/>:<div className="grid h-8 w-8 place-items-center rounded-full bg-[#e4e1d9]"><UserCircle size={19}/></div>}
 function SourceCards({items}:{items:Source[]}){if(!items.length)return null;return <div className="mt-5"><div className="mb-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#969188]">Sources</div><div className="grid gap-2 sm:grid-cols-2">{items.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="group flex min-w-0 items-center gap-2 px-0 py-1 transition"><img src={favicon(s.domain||new URL(s.url).hostname)} alt="" className="h-5 w-5 shrink-0 rounded-sm"/><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-[#37352f]">{s.title}</span><span className="block truncate text-[11px] text-[#98948b]">{s.domain}</span></span></a>)}</div></div>}
-function Progress({status,steps}:{status:string;steps:string[]}){if(!status&&!steps.length)return null;return <><span className="mb-3 inline-flex items-center gap-2 text-[13px] text-[#77736b]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/>{status||"Thinking"}<Loader2 size={13} className="animate-spin"/></span>{steps.slice(-3,-1).map((s,i)=><span key={`${s}-${i}`} className="mb-3 hidden items-center gap-1.5 text-[13px] text-[#77736b] sm:inline-flex"><Check size={12}/> {s}</span>)}</>}
+function Progress({status,steps}:{status:string;steps:string[]}){if(!status&&!steps.length)return null;return <span className="mb-3 inline-flex items-center gap-2 text-[13px] text-[#77736b]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/>{status||steps.at(-1)||"Thinking"}<Loader2 size={13} className="animate-spin"/></span>}
 function Composer({value,setValue,onSubmit,onStop,loading}:{value:string;setValue:(v:string)=>void;onSubmit:()=>void;onStop:()=>void;loading:boolean}){const ref=useRef<HTMLTextAreaElement>(null);useEffect(()=>{const el=ref.current;if(!el)return;el.style.height="auto";el.style.height=`${Math.min(el.scrollHeight,190)}px`},[value]);return <div className="relative rounded-[22px] border border-[#dcd9d1] bg-[#fbfaf7] p-2 shadow-sm"><textarea ref={ref} value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(loading)onStop();else onSubmit()}}} placeholder="Message Sanmine Space..." rows={1} disabled={loading} className="min-h-[48px] max-h-[190px] w-full resize-none overflow-auto border-0 bg-transparent px-3 py-2.5 pr-12 text-[15px] leading-6 outline-none disabled:opacity-70"/><button aria-label={loading?"Stop generating":"Send message"} onClick={loading?onStop:onSubmit} disabled={!loading&&!value.trim()} className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-[#282721] text-white transition disabled:opacity-30">{loading?<Square size={14} fill="currentColor"/>:<ArrowUp size={17}/>}</button></div>}
 
 export default function Home(){
@@ -66,28 +66,29 @@ export default function Home(){
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);router.replace(`/chat/${id}`,{scroll:false});const now=new Date().toISOString();setChats(xs=>{if(xs.some(c=>c.id===id))return xs;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...xs];write(rkey(user.uid),n);return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking"){setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");}if(e.type==="tool_start"){const [key,label]=statusFor(e.name);void key;setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
         if(d.type==="delta"&&d.delta){
-  streamed+=d.delta;
-  setStatus("Writing answer");
-  if(!typeTimer){
-    typeTimer=setInterval(()=>{
-      if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
-      displayed=streamed.slice(0,Math.min(streamed.length,displayed.length+7));
-      setMsgs([...base,{role:"assistant",content:displayed}]);
-    },30);
-  }
-}
+          streamed+=d.delta;
+          setStatus("Writing answer");
+          if(!typeTimer){
+            typeTimer=setInterval(()=>{
+              if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
+              displayed=streamed.slice(0,displayed.length+1);
+              setMsgs([...base,{role:"user",content:q},{role:"assistant",content:displayed}]);
+            },18);
+          }
+        }
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
       while(true){const x=await reader.read();if(x.done)break;buffer+=decoder.decode(x.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines)consume(line)}buffer+=decoder.decode();if(buffer.trim())consume(buffer);
+      while(displayed.length<streamed.length){await new Promise(r=>setTimeout(r,18));}
       if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
       const src=collectSources(events);const metadata:Metadata={kind:"chat_response",durationMs:0,eventCount:events.length,toolCount:events.filter(e=>e.type==="tool_start").length,sources:src};
-      const final=[...base,{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);await loadChats(true);
-    }catch(e){if((e as Error)?.name==="AbortError"){setError("Generation stopped.");if(streamed){const final=[...base,{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
+      const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);await loadChats(true);
+    }catch(e){if((e as Error)?.name==="AbortError"){setError("Generation stopped.");if(streamed){const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
     finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
-  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);setMsgs(base);setText("");setEditingIndex(null);void send(q,base,active)};
+  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);void send(q,next,active)};
   const regenerate=(index:number)=>{if(loading)return;const userIndex=[...msgs.slice(0,index)].map((m,i)=>({m,i})).filter(x=>x.m.role==="user").pop()?.i;if(userIndex===undefined)return;const q=msgs[userIndex].content;const base=msgs.slice(0,userIndex);setMsgs(base);void send(q,base,active)};
   const editMessage=(index:number)=>{const m=msgs[index];if(m.role!=="user"||loading)return;setText(m.content);setEditingIndex(index);requestAnimationFrame(()=>scrollLatest("smooth"))};
   const copyMessage=async(index:number)=>{try{await navigator.clipboard.writeText(msgs[index].content);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{}};
@@ -95,7 +96,7 @@ export default function Home(){
   const name=user?.displayName||user?.email?.split("@")[0]||"User";
   const suggestions=useMemo(()=>["Find more sources","Summarize this","Go deeper on this"],[msgs.length]);
   if(!user)return null;
-  return <main className="relative flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">{loading&&status&&<><span className="pointer-events-none fixed bottom-28 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 text-sm text-[var(--muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/><span>{status}</span><Loader2 size={14} className="animate-spin"/></span>{steps.slice(-5).map((step,i)=><span key={`${step}-${i}`} className="pointer-events-none fixed bottom-28 z-40 ml-3 text-sm text-[var(--muted)]"><Check size={13}/>{step}</span>)}</>}
+  return <main className="relative flex h-screen min-h-0 overflow-hidden bg-[var(--bg)]">
     <div className={`fixed inset-0 z-30 bg-black/20 transition-opacity md:hidden ${mobileOpen?"opacity-100":"pointer-events-none opacity-0"}`} onClick={()=>setMobileOpen(false)}/>
     <aside className={`${mobileOpen?"flex":"hidden"} fixed inset-y-0 left-0 z-40 w-[78vw] max-w-[310px] shrink-0 flex-col border-r border-[var(--line)] bg-[#f2f1ed] p-3 shadow-xl md:static md:flex md:shadow-none ${side?"md:w-[270px]":"md:w-[72px]"}`}>
       <div className={`flex items-center pb-5 ${side?"justify-between px-2":"justify-center"}`}>{side?<button onClick={fresh} className="flex items-center gap-2.5"><img src={LOGO} alt="Samine" className="h-7 w-7 rounded-md object-cover"/><span className="text-[15px] font-semibold">Sanmine Space</span></button>:null}<button onClick={()=>side?setSide(false):setSide(true)} className="grid h-8 w-8 place-items-center rounded-lg text-[#5f5b54] hover:bg-black/5" aria-label={side?"Collapse sidebar":"Expand sidebar"}><span className="text-lg">{side?"‹":"›"}</span></button></div>
