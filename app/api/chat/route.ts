@@ -34,6 +34,29 @@ function buildResearchFallback(events: AgentEvent[], userMessage: string) {
   return `## Research results\n\nI completed the web research and found **${unique.length} source${unique.length === 1 ? "" : "s"}**.\n\n${unique.map((item, index) => `${index + 1}. **${item.title}**\n   ${item.url}${item.snippet ? `\n   ${item.snippet.replace(/\s+/g, " ").slice(0, 220)}` : ""}`).join("\n\n")}`;
 }
 
+function collectPersistedSources(events: AgentEvent[]) {
+  const map = new Map<string, { title: string; url: string; snippet?: string; domain?: string }>();
+  for (const event of events || []) {
+    if (event.type !== "tool_result" || !event.result || typeof event.result !== "object") continue;
+    const result = event.result as any;
+    const add = (item: any) => {
+      try {
+        const url = new URL(String(item?.url || ""));
+        if (!/^https?:$/.test(url.protocol)) return;
+        map.set(url.toString(), {
+          title: String(item?.title || "Web source").slice(0, 180),
+          url: url.toString(),
+          domain: url.hostname.replace(/^www\./, ""),
+          ...(item?.snippet ? { snippet: String(item.snippet).replace(/\s+/g, " ").slice(0, 240) } : {}),
+        });
+      } catch {}
+    };
+    if (Array.isArray(result.results)) result.results.forEach(add);
+    if (result.url) add(result);
+  }
+  return [...map.values()].slice(0, 12);
+}
+
 async function prepareChat(user: Awaited<ReturnType<typeof getRequestUser>>, message: string, requestedChatId?: string | null) {
   if (!hasDatabaseConfig()) return null;
   try {
@@ -169,7 +192,8 @@ export async function POST(request: Request) {
           assertRunBudget(run, totalInputTokens, totalOutputTokens, totalCost);
           await recordUsage(run, usage);
           const toolCount = events.filter((e) => e.type === "tool_start").length;
-          const metadata = { kind: "chat_response", runId: run.runId, durationMs: Date.now() - startAt, eventCount: events.length, toolCount, sources: events.filter((e) => e.type === "tool_result").map((e) => ({ name: e.name, toolCallId: e.toolCallId })), usage };
+          const persistedSources = collectPersistedSources(events);
+          const metadata = { kind: "chat_response", runId: run.runId, durationMs: Date.now() - startAt, eventCount: events.length, toolCount, sources: persistedSources, usage };
           const saved = await persistAssistant(user, chatId, responseText, metadata);
           send({ type: "done", response: responseText, events: events.filter((event) => event.type !== "thinking"), chatId, runId: run.runId, metadata, persistence: saved ? "saved" : "unavailable" });
           await finishRun(run, "completed", { toolCount, usage });
