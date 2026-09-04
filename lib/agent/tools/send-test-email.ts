@@ -13,7 +13,11 @@ export const sendTestEmailTool: AgentTool = {
 
     try {
       await ensureProductionSchema();
-      const rows = await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
+      const userRows = await sql`SELECT email FROM users WHERE id=${userId} LIMIT 1`;
+      const userEmail = String((userRows[0] as any)?.email || "").trim().toLowerCase();
+      const rows = userEmail
+        ? await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE provider='google' AND (user_id=${userId} OR LOWER(email)=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`
+        : await sql`SELECT id, provider, email, expires_at FROM email_connections WHERE user_id=${userId} AND provider='google' ORDER BY updated_at DESC LIMIT 1`;
       const gmail = rows[0] as { id: string; provider: string; email: string; expires_at?: number | string | null } | undefined;
       if (!gmail) {
         return {
