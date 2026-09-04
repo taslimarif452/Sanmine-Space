@@ -177,7 +177,7 @@ export async function POST(request: Request) {
               if (!delta) return;
               streamed += delta;
               send({ type: "delta", delta });
-            }),
+            }, user.email),
             "Agent run",
             MODEL_TIMEOUT_MS * 4,
           );
