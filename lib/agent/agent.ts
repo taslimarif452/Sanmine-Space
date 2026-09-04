@@ -18,6 +18,7 @@ TOOL ROUTING — IMPORTANT:
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
+- If the user explicitly asks for a simple/test email, use send_test_email. A test email is separate from creator/prospect outreach and must not require a creator list. The test email is sent to the user's connected Gmail address.
 - IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, do not stop at drafting. Use send_proposal_outreach. That tool MUST first verify that Gmail or another supported sending provider is connected. If no provider is connected, stop immediately and tell the user, in the same language as their request, to install/connect the email plugin from Plugins. Do not research contacts or claim anything was sent until a provider is connected.
 - If a provider is connected, send_proposal_outreach researches public business/contact emails, personalizes each proposal from the supplied research, and sends it through the connected provider. Only public business/contact emails may be used; never guess an email address. If no public business email is found, skip that prospect and report it.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
@@ -39,8 +40,9 @@ const isYouTubeRequest = (message: string) => /\byoutube\b|\byoutuber(s)?\b|yout
 const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel|channels|subscriber|followers|views/i.test(message);
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
-const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bbhej/i.test(message);
-const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bbhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
+const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bhej/i.test(message);
+const isTestEmailRequest = (message: string) => /(test|testing|simple\s+(hi|hello|message|msg)|simple\s+email).*(email|mail)|(email|mail).*(test|testing|simple\s+(hi|hello|message|msg))/i.test(message) && /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message);
+const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
 
 function detectLanguage(text: string) {
@@ -161,6 +163,26 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
 
+  if (isTestEmailRequest(userMessage) && userId) {
+    const testTool = getTool("send_test_email");
+    if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
+    emit({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
+    let result: unknown;
+    try {
+      result = await testTool.execute({ user_id: userId, message: "Hi" });
+    } catch (error) {
+      result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." };
+    }
+    emit({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
+    const language = detectLanguage(userMessage);
+    const response = result && typeof result === "object" && (result as any).status === "sent"
+      ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`)
+      : String((result as any)?.message || "Test email send nahi ho paya.");
+    emitThinking();
+    streamText(response);
+    return { response, events };
+  }
+
   if (isExplicitSendRequest(userMessage) && userId) {
     const sendTool = getTool("send_proposal_outreach");
     const targets = parseResearchTargets(history);
@@ -210,9 +232,6 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     emitThinking();
-    // Tool orchestration uses the non-streaming provider call. Streaming function-call
-    // responses can leave some providers waiting indefinitely before the first tool event.
-    // Once all tools are complete, the final answer is streamed separately without tools.
     const response = await provider.chat(messages, tools);
     if (!response.toolCalls.length) {
       const finalText = response.text || "I’m ready. What would you like me to do?";
