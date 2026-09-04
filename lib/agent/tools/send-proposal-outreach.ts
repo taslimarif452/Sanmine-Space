@@ -76,8 +76,6 @@ async function findContact(name: string, sourceUrl = "") {
   return { status: "success", email: emails[0] ?? null, emails: [...new Set(emails)], sources: sources.slice(0, 8) };
 }
 async function discoverBusinessTargets(apiKey: string) {
-  // Search for actual businesses rather than guides/listicles. The agent must never
-  // turn an article's author/contact email into a prospect.
   const queries = [
     `"no website" "contact" "@" "local business"`,
     `"no website" "email" "restaurant" OR "salon" OR "shop"`,
@@ -109,12 +107,7 @@ async function discoverBusinessTargets(apiKey: string) {
     return true;
   }).slice(0, 10).map((row) => {
     const emails = extractBusinessEmails(`${clean(row.title)}\n${clean(row.url)}\n${clean(row.content)}`);
-    return {
-      name: clean(row.title).replace(/\s*[|—-]\s*.*$/, "").trim(),
-      description: clean(row.content),
-      channel_url: clean(row.url),
-      email: emails[0],
-    };
+    return { name: clean(row.title).replace(/\s*[|—-]\s*.*$/, "").trim(), description: clean(row.content), channel_url: clean(row.url), email: emails[0] };
   });
 }
 function buildEmail(target: Target, offer: string, language: string) {
@@ -146,7 +139,11 @@ export const sendProposalOutreachTool: AgentTool = {
     if (!suppliedTargets.length) return { status: "error", message: "No prospects were supplied." };
     if (!offer) return { status: "error", message: "An offer is required." };
 
-    const connections = await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} ORDER BY updated_at DESC`;
+    const userRows = await sql`SELECT email FROM users WHERE id=${userId} LIMIT 1`;
+    const userEmail = String((userRows[0] as any)?.email || "").trim().toLowerCase();
+    const connections = userEmail
+      ? await sql`SELECT id, provider, email FROM email_connections WHERE (user_id=${userId} OR LOWER(email)=${userEmail}) ORDER BY CASE WHEN user_id=${userId} THEN 0 ELSE 1 END, updated_at DESC`
+      : await sql`SELECT id, provider, email FROM email_connections WHERE user_id=${userId} ORDER BY updated_at DESC`;
     const gmail = connections.find((row) => String((row as any).provider) === "google") as { id: string; provider: string; email: string } | undefined;
     if (!gmail) return { status: "needs_connection", sent: [], skipped: [], failed: [], connected_providers: connections.map((row) => String((row as any).provider)), message: connectionMessage(language) };
 
@@ -154,26 +151,10 @@ export const sendProposalOutreachTool: AgentTool = {
     const sent: Array<Record<string, string>> = [];
     const skipped: Array<Record<string, string>> = [];
     const failed: Array<Record<string, string>> = [];
-
-    // Research results can contain article/list pages. Never send to those pages.
-    // If the model supplied only content pages, perform a fresh business discovery.
     let workingTargets = suppliedTargets.filter((target) => !isContentTitle(clean(target.name)));
     const tavilyKey = process.env.TAVILY_API_KEY?.trim();
-    if (!workingTargets.length && tavilyKey) {
-      workingTargets = await discoverBusinessTargets(tavilyKey);
-    }
-    if (!workingTargets.length) {
-      return {
-        status: "completed",
-        sender: gmail.email,
-        sent: [],
-        skipped: [{ creator: "Research results", reason: "No real business prospects with verified public contact emails were found. No email was fabricated or sent." }],
-        failed: [],
-        sent_count: 0,
-        skipped_count: 1,
-        failed_count: 0,
-      };
-    }
+    if (!workingTargets.length && tavilyKey) workingTargets = await discoverBusinessTargets(tavilyKey);
+    if (!workingTargets.length) return { status: "completed", sender: gmail.email, sent: [], skipped: [{ creator: "Research results", reason: "No real business prospects with verified public contact emails were found. No email was fabricated or sent." }], failed: [], sent_count: 0, skipped_count: 1, failed_count: 0 };
 
     for (const target of workingTargets) {
       let email = clean(target.email).toLowerCase();
@@ -185,8 +166,6 @@ export const sendProposalOutreachTool: AgentTool = {
       }
       const { subject, body } = buildEmail(target, offer, language);
       try {
-        // Actual Gmail send happens first. Only after Gmail confirms success do we
-        // persist the message as sent.
         const result = await sendGmailMessage(userId, gmail.id, { to: email, subject, body });
         const approval = await sql`INSERT INTO email_approvals (user_id, connection_id, recipient, subject, body, status, approved_at, sent_at, provider_message_id) VALUES (${userId}, ${gmail.id}, ${email}, ${subject}, ${body}, 'sent', NOW(), NOW(), ${result.id || null}) RETURNING id`;
         await sql`INSERT INTO email_events (user_id, approval_id, recipient, event_type, provider_message_id, provider_thread_id, metadata) VALUES (${userId}, ${approval[0]?.id || null}, ${email}, 'sent', ${result.id || null}, ${result.threadId || null}, ${JSON.stringify({ source: "agent_outreach" })}::jsonb)`;
