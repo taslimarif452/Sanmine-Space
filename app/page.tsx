@@ -63,7 +63,7 @@ export default function Home(){
       if(!r.ok){const raw=await r.text();let msg=`Chat request failed (${r.status}).`;try{msg=JSON.parse(raw).error||msg}catch{}throw new Error(msg)}
       const reader=r.body?.getReader();if(!reader)throw new Error("No response stream.");const decoder=new TextDecoder();let buffer="";
       const consume=(line:string)=>{if(!line.trim())return;let d:StreamPacket;try{d=JSON.parse(line)}catch{return}
-        if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);router.replace(`/chat/${id}`,{scroll:false});const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
+        if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking"){setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");}if(e.type==="tool_start"){const [key,label]=statusFor(e.name);void key;setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
         if(d.type==="delta"&&d.delta){
           streamed+=d.delta;
