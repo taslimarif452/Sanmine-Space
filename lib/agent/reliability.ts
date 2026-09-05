@@ -3,26 +3,17 @@ import type { AgentEvent, ToolResult } from "@/lib/agent/tools/types";
 
 export const MAX_AGENT_STEPS = 8;
 export const MAX_TOOL_CALLS = 10;
-export const TOOL_TIMEOUT_MS = 60_000;
-export const MODEL_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 1;
 
 export type SafeSource = { title: string; url: string; snippet?: string; domain: string };
 
-export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.ceil(ms / 1000)}s.`)), ms);
-    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
-  });
-}
-
-export async function executeWithRetry<T>(fn: () => Promise<T>, label: string, timeout = TOOL_TIMEOUT_MS): Promise<T> {
+export async function executeWithRetry<T>(fn: () => Promise<T>, _label: string): Promise<T> {
   let last: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-    try { return await withTimeout(fn(), timeout, label); }
+    try { return await fn(); }
     catch (error) { last = error; if (attempt < MAX_RETRIES) await new Promise((r) => setTimeout(r, 250 * 2 ** attempt)); }
   }
-  throw last instanceof Error ? last : new Error(`${label} failed.`);
+  throw last instanceof Error ? last : new Error("Agent execution failed.");
 }
 
 export function normalizeToolResult(name: string, toolCallId: string, value: unknown): ToolResult {
