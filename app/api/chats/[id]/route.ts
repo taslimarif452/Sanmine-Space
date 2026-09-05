@@ -38,6 +38,35 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   }
 }
 
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getRequestUser(request);
+    if (!hasDatabaseConfig()) return NextResponse.json({ error: "Database persistence is not configured." }, { status: 503 });
+
+    const { id } = await context.params;
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid chat id." }, { status: 400 });
+
+    const body = await request.json().catch(() => ({}));
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+    if (!title) return NextResponse.json({ error: "Chat title is required." }, { status: 400 });
+
+    const result = await sql`
+      UPDATE chats
+      SET title = ${title}, updated_at = NOW()
+      WHERE id = ${id} AND user_id = ${user.uid}
+      RETURNING id, title, created_at, updated_at
+    `;
+
+    if (!result.length) return NextResponse.json({ error: "Chat not found." }, { status: 404 });
+    return NextResponse.json({ chat: result[0] });
+  } catch (error) {
+    console.error("Chat rename error:", error);
+    const message = error instanceof Error ? error.message : "Unable to rename chat.";
+    const auth = /authentication|auth|token|credential|unauthorized|firebase/i.test(message);
+    return NextResponse.json({ error: message }, { status: auth ? 401 : 503 });
+  }
+}
+
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await getRequestUser(request);
