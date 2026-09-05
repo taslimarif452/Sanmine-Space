@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronDown, Plus, Search, Settings, X } from "lucide-react"
 import { useAuthUser } from "@/components/auth-gate";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 
-type Plugin = { id: string; name: string; description: string; category: string; logo: string; status: "Ready" | "Setup required"; billing: "No card" | "Free quota" | "OAuth" };
+ type Plugin = { id: string; name: string; description: string; category: string; logo: string; status: "Ready" | "Setup required"; billing: "No card" | "Free quota" | "OAuth" };
 const plugins: Plugin[] = [
   { id: "web", name: "Web Search", description: "Search the web for research and source-backed answers.", category: "Research", logo: "https://cdn.simpleicons.org/googlechrome", status: "Ready", billing: "Free quota" },
   { id: "github", name: "GitHub", description: "Connect repositories, issues, pull requests and code.", category: "Developer", logo: "https://cdn.simpleicons.org/github", status: "Setup required", billing: "OAuth" },
@@ -41,10 +41,12 @@ export default function PluginsPage() {
 
   const installPlugin = () => {
     if (!user?.uid || !selectedPlugin) return;
-    const next = Array.from(new Set([...installedIds, selectedPlugin.id]));
+    const pluginId = selectedPlugin.id;
+    const next = Array.from(new Set([...installedIds, pluginId]));
     setInstalledIds(next);
     window.localStorage.setItem(storageKey(user.uid), JSON.stringify(next));
     setSelectedPlugin(null);
+    window.location.assign(`/plugins/${pluginId}`);
   };
 
   const installedPlugins = useMemo(() => plugins.filter((p) => installedIds.includes(p.id)), [installedIds]);
