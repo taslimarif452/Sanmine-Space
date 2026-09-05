@@ -16,7 +16,7 @@ TOOL ROUTING — IMPORTANT:
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
-- If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as `to` and send to that exact address. Never replace an explicit recipient with the connected Gmail account.
+- If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as 'to' and send to that exact address. Never replace an explicit recipient with the connected Gmail account.
 - IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, use send_proposal_outreach and do not stop at drafting. The tool must verify the connected Gmail account before sending.
 - For a researched creator list from an earlier assistant response, send to the exact verified contact emails in that research result. Do not discard the research list and do not substitute the connected sender account as recipient.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
@@ -124,7 +124,10 @@ function buildSendSummary(result: any, language: string) {
   return lines.join("\n");
 }
 
-function extractEmailAddress(text: string) { return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || ""; }
+function extractEmailAddress(text: string) {
+  return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || "";
+}
+
 function extractTestMessage(text: string) {
   const match = text.match(/\b(?:tell|say)\s+(?:him|her|them)\s+(.+?)(?:\s+then\b|\s+and\s+then\b|$)/i);
   return match?.[1]?.trim() || "This is a test email from Sanmine Space.";
