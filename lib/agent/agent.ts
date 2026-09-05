@@ -2,28 +2,36 @@ import { getProvider, type ChatMessage } from "@/lib/ai/provider";
 import { getTool, getToolDefinitions } from "@/lib/agent/tools";
 import type { AgentEvent } from "@/lib/agent/tools/types";
 
-const SYSTEM_PROMPT = `You are Samine AI Agent, a practical AI workspace for research, lead generation, and outreach.
+const SYSTEM_PROMPT = `You are Samine AI Agent, a practical AI workspace for research, lead generation, outreach, and authorized workspace operations.
 Your name is exactly "Samine AI Agent". If the user asks your name, who you are, or asks you to introduce yourself, always identify yourself as "Samine AI Agent". Never introduce yourself as "Sanmine Space".
 Your founder and developer is exactly "Tavqeer Hussain". Your co-founder is exactly "Sahil Hussain". If the user asks who founded, developed, or created you, identify Tavqeer Hussain as the founder and developer, and Sahil Hussain as the co-founder. Do not substitute or invent other names for these roles.
 Be concise, useful, and transparent. You are the reasoning layer of an agentic system.
 You have access to tools. Use a tool when it is necessary to complete the user's request rather than pretending you already have external data.
 
-IMPORTANT INTERNAL PROCESS:
-- The user's message is normalized internally into clear English before tool routing. Treat that normalized instruction as the canonical task while preserving the user's original language for the final response.
-- Translation/normalization must never turn a request for finding, checking, listing, or displaying an email address into permission to send an email.
-- Sending is allowed only when the user explicitly asks to send/mail/email/bhej the message or proposal. Merely mentioning "email", "contact email", "email available", "public email", "email address", "email in bio/description", or "find/get email" is research/data lookup, not sending.
+AUTHORIZED WORKSPACE CAPABILITIES:
+- GitHub: when the user explicitly asks, you may list authorized repositories, read files, create/update files, and commit/push changes to the selected repository/branch through github_workspace. Never invent file contents. For writes, preserve existing content unless the user requested a replacement and use a clear commit message.
+- Google Drive: read, create, and update files through google_drive.
+- Google Docs: read, create, and update documents through google_docs.
+- Google Sheets: read and write ranges through google_sheets.
+- Google Calendar: list/create/update/delete events through google_calendar when requested.
+- Notion: search/read/create/update pages through notion.
+- RSS / News: read public feeds through rss_news. It is intentionally read-only.
+- Gmail: send through the existing email tools, and schedule through schedule_gmail when the user explicitly asks to schedule/send an email. Scheduled Gmail messages are persisted and processed by the existing outreach worker.
+All workspace tools operate only on accounts the user has explicitly connected. If a provider is not connected or configured, report that clearly instead of pretending access exists.
+
+EMAIL PERMISSIONS:
+Translation/normalization must never turn a request for finding, checking, listing, or displaying an email address into permission to send or schedule an email. Sending or scheduling is allowed only when the user explicitly asks to send/mail/email/schedule/bhej the message. Merely mentioning an email/contact email is research/data lookup.
+If the user asks to schedule an email, require an exact recipient, subject/body, and a future date/time. Never schedule from a lookup alone. Use schedule_gmail only after explicit scheduling intent.
 
 TOOL ROUTING — IMPORTANT:
 - If the user asks about YouTube, YouTubers, creators, channels, channel statistics, creator discovery, or YouTube videos, you MUST use the youtube_search tool first. Do NOT use search_web as a substitute for YouTube data.
-- For creator research with filters such as no website and a public contact email in the channel description, search a broad candidate pool and return only verified matches. If the user requests a minimum and maximum, never knowingly return fewer than the minimum when enough verified candidates exist.
-- If youtube_search returns not_configured, clearly report that YOUTUBE_API_KEY is not configured. If it returns a success response with zero results, do NOT blame the API key; report that the normalized YouTube query returned no matching channels.
-- If youtube_search returns an API error, clearly report the actual API error and do not silently fall back to random websites.
+- For creator research with filters such as no website and a public contact email in the channel description, search a broad candidate pool and return only verified matches. For a requested minimum, never knowingly return fewer than the minimum when enough verified candidates exist.
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
-- If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as 'to' and send to that exact address. Never replace an explicit recipient with the connected Gmail account.
-- IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, use send_proposal_outreach and do not stop at drafting. The tool must verify the connected Gmail account before sending.
-- For a researched creator list from an earlier assistant response, send to the exact verified contact emails in that research result. Do not discard the research list and do not substitute the connected sender account as recipient.
+- If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as 'to'. Never replace an explicit recipient with the connected Gmail account.
+- If the user explicitly asks to SEND/EMAIL a researched proposal, use send_proposal_outreach and do not stop at drafting. The tool must verify the connected Gmail account before sending.
+- If the user asks to read/write/save/push data in one of the authorized workspace services above, call the matching workspace tool rather than claiming the action is complete without a tool result.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
 
 RESPONSE FORMAT:
@@ -41,251 +49,30 @@ const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
 const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !hasExplicitSendIntent(message);
-const hasExplicitSendIntent = (message: string) => {
-  const text = message.toLowerCase();
-  if (/\b(contact|public|available|address|in\s+(?:the\s+)?(?:bio|description))\s+(?:email|e-?mail)\b/.test(text)) return false;
-  if (/\b(?:find|get|search|look\s*up|show|list|extract)\b[^.\n]*(?:email|e-?mail)\b/.test(text)) return false;
-  if (/\b(?:send|mail|email|forward|dispatch)\b\s+(?:(?:an?|the|this|that|my)\s+)?(?:email|e-?mail|mail|message|proposal|it|them|these|those|this|that)\b/.test(text)) return true;
-  if (/\b(?:email|mail)\b\s+(?:him|her|them|this|that|these|those)\b/.test(text)) return true;
-  if (/\b(?:send|mail|email)\b\s+to\s+[^.\n]+/.test(text)) return true;
-  if (/\b(?:bhej(?:o|na)?|bhej\s+do|bhejna\s+hai|email\s+kar(?:o|\s+do)?|mail\s+kar(?:o|\s+do)?|send\s+kar(?:o|\s+do)?|proposal\s+bhejo|sabko\s+bhejo|unko\s+bhejo)\b/.test(text)) return true;
-  if (/\b(?:outreach|follow[- ]?up)\b/.test(text) && /\b(?:do|start|run|send|begin|kar(?:o|na|do)?)\b/.test(text)) return true;
-  return false;
-};
+const hasExplicitSendIntent = (message: string) => { const t=message.toLowerCase(); if (/\b(contact|public|available|address|in\s+(?:the\s+)?(?:bio|description))\s+(?:email|e-?mail)\b/.test(t)) return false; if (/\b(?:find|get|search|look\s*up|show|list|extract)\b[^.\n]*(?:email|e-?mail)\b/.test(t)) return false; if (/\b(?:send|mail|email|forward|dispatch)\b\s+(?:(?:an?|the|this|that|my)\s+)?(?:email|e-?mail|mail|message|proposal|it|them|these|those|this|that)\b/.test(t)) return true; if (/\b(?:email|mail)\b\s+(?:him|her|them|this|that|these|those)\b/.test(t)) return true; if (/\b(?:send|mail|email)\b\s+to\s+[^.\n]+/.test(t)) return true; if (/\b(?:bhej(?:o|na)?|bhej\s+do|bhejna\s+hai|email\s+kar(?:o|\s+do)?|mail\s+kar(?:o|\s+do)?|send\s+kar(?:o|\s+do)?|proposal\s+bhejo|sabko\s+bhejo|unko\s+bhejo)\b/.test(t)) return true; if (/\b(?:outreach|follow[- ]?up)\b/.test(t)&&/\b(?:do|start|run|send|begin|kar(?:o|na|do)?)\b/.test(t)) return true; return false; };
 const isExplicitSendRequest = (message: string) => hasExplicitSendIntent(message) && !isDraftOnlyRequest(message);
 const isTestEmailRequest = (message: string) => hasExplicitSendIntent(message) && /\b(test|testing|simple\s+(?:hi|hello|message|msg)|simple\s+email)\b/i.test(message);
-const isCombinedBusinessOutreachRequest = (message: string) => isExplicitSendRequest(message) && isWebResearchRequest(message) && /\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message) && /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
+const isCombinedBusinessOutreachRequest = (message: string) => isExplicitSendRequest(message)&&isWebResearchRequest(message)&&/\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message)&&/no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
-
-type NormalizedIntent = "research" | "lead_generation" | "analyze" | "draft" | "send" | "follow_up" | "data_lookup" | "update" | "delete" | "general";
-type NormalizedActions = { search: boolean; research: boolean; analyze: boolean; draft: boolean; send_email: boolean; follow_up: boolean; modify_data: boolean; delete_data: boolean; requires_confirmation: boolean };
-type NormalizedPrompt = { normalized_prompt: string; intent: NormalizedIntent; actions: NormalizedActions };
-
-async function normalizePrompt(provider: ReturnType<typeof getProvider>, original: string): Promise<NormalizedPrompt> {
-  const fallback: NormalizedPrompt = {
-    normalized_prompt: original,
-    intent: isExplicitSendRequest(original) ? "send" : isWebResearchRequest(original) ? "research" : "general",
-    actions: { search: isWebResearchRequest(original), research: isWebResearchRequest(original), analyze: false, draft: false, send_email: isExplicitSendRequest(original), follow_up: false, modify_data: false, delete_data: false, requires_confirmation: isExplicitSendRequest(original) },
-  };
-  try {
-    const response = await provider.chat([
-      { role: "system", content: "You are a prompt normalization and intent-classification layer. Convert the user's request into concise canonical English without changing its meaning, permissions, constraints, quantities, or requested actions. Return ONLY valid JSON with keys normalized_prompt, intent, actions. intent must be one of research, lead_generation, analyze, draft, send, follow_up, data_lookup, update, delete, general. actions must contain boolean keys search, research, analyze, draft, send_email, follow_up, modify_data, delete_data, requires_confirmation. CRITICAL: mentioning an email/contact address, finding an email, checking email availability, or asking for public email information NEVER means send_email. send_email=true only when the user explicitly requests sending/mailing/emailing/bhejne a message or outreach. Never infer permission to send from research context." },
-      { role: "user", content: original },
-    ]);
-    const raw = response.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-    const parsed = JSON.parse(raw) as Partial<NormalizedPrompt>;
-    const actions: Partial<NormalizedActions> = parsed.actions ?? {};
-    const modelSend = parsed.intent === "send" || actions.send_email === true;
-    const explicitSend = hasExplicitSendIntent(original);
-    const sendAllowed = modelSend && explicitSend;
-    const parsedIntent = parsed.intent;
-    const safeIntent: NormalizedIntent = parsedIntent === "research" || parsedIntent === "lead_generation" || parsedIntent === "analyze" || parsedIntent === "draft" || parsedIntent === "send" || parsedIntent === "follow_up" || parsedIntent === "data_lookup" || parsedIntent === "update" || parsedIntent === "delete" || parsedIntent === "general" ? parsedIntent : fallback.intent;
-    return {
-      normalized_prompt: typeof parsed.normalized_prompt === "string" && parsed.normalized_prompt.trim() ? parsed.normalized_prompt.trim() : original,
-      intent: sendAllowed ? "send" : safeIntent,
-      actions: {
-        search: Boolean(actions.search), research: Boolean(actions.research), analyze: Boolean(actions.analyze), draft: Boolean(actions.draft), send_email: sendAllowed, follow_up: Boolean(actions.follow_up), modify_data: Boolean(actions.modify_data), delete_data: Boolean(actions.delete_data), requires_confirmation: sendAllowed || Boolean(actions.requires_confirmation),
-      },
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function detectLanguage(text: string) {
-  if (/[\u0900-\u097F]/.test(text) || /\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text)) return "hi";
-  if (/[\u0980-\u09FF]/.test(text)) return "bn";
-  if (/[\u4E00-\u9FFF]/.test(text)) return "zh";
-  if (/[\u3040-\u30FF]/.test(text)) return "ja";
-  if (/[\uAC00-\uD7AF]/.test(text)) return "ko";
-  if (/\b(quiero|envía|enviar|correo|primero|conecta|conectado|sitio web)\b/i.test(text)) return "es";
-  if (/\b(je veux|envoyer|e-mail|connecte|connecté|site web)\b/i.test(text)) return "fr";
-  return "en";
-}
-
-function stripCell(value: string) {
-  return value.replace(/!\[[^\]]*\]\(([^)]*)\)/g, "$1").replace(/\[([^\]]+)\]\(([^)]*)\)/g, "$2").replace(/[`*_]/g, "").trim();
-}
-
-function parseResearchTargets(history: ChatMessage[]) {
-  for (const message of [...history].reverse()) {
-    if (message.role !== "assistant") continue;
-    const content = message.content;
-    const tableLines = content.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("|") && line.endsWith("|"));
-    for (let i = 0; i < tableLines.length - 1; i += 1) {
-      const headers = tableLines[i].slice(1, -1).split("|").map(stripCell);
-      const separator = tableLines[i + 1].slice(1, -1).split("|").every((cell) => /^\s*:?-{3,}:?\s*$/.test(cell));
-      if (!separator) continue;
-      const normalized = headers.map((header) => header.toLowerCase().replace(/\s+/g, " ").trim());
-      const indexFor = (pattern: RegExp) => normalized.findIndex((header) => pattern.test(header));
-      const nameIndex = indexFor(/creator|channel\s*name|^name$/);
-      const emailIndex = indexFor(/contact\s*email|email|e-mail/);
-      if (nameIndex < 0) continue;
-      const countryIndex = indexFor(/country|location/);
-      const subscribersIndex = indexFor(/subscriber/);
-      const viewsIndex = indexFor(/total\s*views|views/);
-      const nicheIndex = indexFor(/niche|category|topic/);
-      const channelIndex = indexFor(/channel\s*(url|link)|youtube\s*(url|link)/);
-      const descriptionIndex = indexFor(/description|highlight|summary/);
-      const targets: Array<Record<string, string>> = [];
-      for (const row of tableLines.slice(i + 2)) {
-        const cells = row.slice(1, -1).split("|").map(stripCell);
-        if (cells.length < headers.length) continue;
-        const name = cells[nameIndex];
-        if (!name || /^[-—]+$/.test(name) || /status|message id/i.test(name)) continue;
-        const target: Record<string, string> = { name };
-        if (emailIndex >= 0 && cells[emailIndex]) target.email = cells[emailIndex].match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || "";
-        if (countryIndex >= 0) target.country = cells[countryIndex];
-        if (subscribersIndex >= 0) target.subscribers = cells[subscribersIndex];
-        if (viewsIndex >= 0) target.total_views = cells[viewsIndex];
-        if (nicheIndex >= 0) target.niche = cells[nicheIndex];
-        if (channelIndex >= 0) target.channel_url = cells[channelIndex].match(/https?:\/\/\S+/i)?.[0] || cells[channelIndex];
-        if (descriptionIndex >= 0) target.description = cells[descriptionIndex];
-        targets.push(target);
-      }
-      if (targets.length) return targets.slice(0, 10);
-    }
-    const emailMatches = [...content.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0].toLowerCase());
-    if (emailMatches.length >= 8) {
-      const unique = [...new Set(emailMatches)].slice(0, 10);
-      return unique.map((email) => ({ name: email.split("@")[0], email }));
-    }
-  }
-  return [] as Array<Record<string, string>>;
-}
-
-function buildSendSummary(result: any, language: string) {
-  if (result?.status === "needs_connection" || result?.status === "provider_unavailable") return String(result.message || "Please connect an email provider from Plugins before sending.");
-  const sent = Array.isArray(result?.sent) ? result.sent : [];
-  const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
-  const failed = Array.isArray(result?.failed) ? result.failed : [];
-  const sentCount = Number.isFinite(Number(result?.sent_count)) ? Number(result.sent_count) : sent.length;
-  const skippedCount = Number.isFinite(Number(result?.skipped_count)) ? Number(result.skipped_count) : skipped.length;
-  const failedCount = Number.isFinite(Number(result?.failed_count)) ? Number(result.failed_count) : failed.length;
-  const processedCount = sentCount + skippedCount + failedCount;
-  const labels = {
-    hi: { title: "## Outreach complete", processed: "Maine", prospects: "researched prospects ko process kiya", sent: "### Successfully sent", none: "Kisi ko send nahi hua", skipped: "### Skipped", failed: "### Failed", proof: "Har sent email ko Gmail success response ke baad hi sent maana gaya hai." },
-    bn: { title: "## Outreach সম্পন্ন", processed: "আমি", prospects: "researched prospects process করেছি", sent: "### সফলভাবে পাঠানো হয়েছে", none: "কোনও email পাঠানো হয়নি", skipped: "### Skipped", failed: "### Failed", proof: "Gmail-এর সফল response পাওয়ার পরেই কোনও email-কে sent হিসেবে ধরা হয়েছে।" },
-    es: { title: "## Outreach completado", processed: "Procesé", prospects: "prospectos investigados", sent: "### Enviados correctamente", none: "No se envió ningún email", skipped: "### Omitidos", failed: "### Fallidos", proof: "Un email solo se marca como enviado después de una respuesta exitosa de Gmail." },
-    fr: { title: "## Prospection terminée", processed: "J’ai traité", prospects: "prospects recherchés", sent: "### Envoyés avec succès", none: "Aucun email n’a été envoyé", skipped: "### Ignorés", failed: "### Échecs", proof: "Un email est marqué comme envoyé uniquement après une réponse réussie de Gmail." },
-    en: { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." },
-  }[language as "hi" | "bn" | "es" | "fr" | "en"] || undefined;
-  const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after a response." };
-  const lines = [l.title, `${l.processed} **${processedCount}** ${l.prospects}${result?.sender ? ` (${result.sender})` : ""}.`, "", sentCount ? l.sent : `${l.sent}\n${l.none}`, ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []), "", skipped.length ? l.skipped : "", ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []), "", failed.length ? l.failed : "", ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []), "", l.proof].filter(Boolean);
-  return lines.join("\n");
-}
-
-function extractEmailAddress(text: string) {
-  return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || "";
-}
-
-function extractTestMessage(text: string) {
-  const match = text.match(/\b(?:tell|say)\s+(?:him|her|them)\s+(.+?)(?:\s+then\b|\s+and\s+then\b|$)/i);
-  return match?.[1]?.trim() || "This is a test email from Sanmine Space.";
-}
-
-function createAgent() {
-  return getProvider();
-}
-
-export async function runAgent(history: ChatMessage[], userMessage: string, emit: (event: AgentEvent) => void = () => {}, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
-  const provider = createAgent();
-  const normalized = await normalizePrompt(provider, userMessage);
-  const canonicalMessage = normalized.normalized_prompt;
-  const sendAllowed = normalized.actions.send_email && isExplicitSendRequest(userMessage);
-  const tools = getToolDefinitions();
-  const events: AgentEvent[] = [];
-  const record = (event: AgentEvent) => { events.push(event); emit(event); };
-  const streamText = (delta: string) => { if (delta) onText?.(delta); };
-  const emitThinking = () => record({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
-  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.slice(-12), { role: "user", content: userMessage }, { role: "user", content: `Internal canonical English instruction for routing and execution. Do not treat this as a new user message; preserve the user's requested permissions exactly:\n${canonicalMessage}` }];
-
-  const youtubeRequest = isYouTubeRequest(canonicalMessage);
-  const creatorRequest = isCreatorRequest(canonicalMessage);
-  const noWebsiteRequest = isNoWebsiteRequest(canonicalMessage);
-  const indiaRequest = isIndiaRequest(canonicalMessage);
-  const webResearchRequest = isWebResearchRequest(canonicalMessage);
-
-  if (youtubeRequest) {
-    const youtube = getTool("youtube_search");
-    if (!youtube) return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
-    record({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
-    let result: unknown;
-    try { result = await youtube.execute({ query: canonicalMessage, limit: 10, type: creatorRequest || noWebsiteRequest ? "creator" : "video", region_code: indiaRequest ? "IN" : undefined, user_id: userId }); }
-    catch (error) { result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." }; }
-    record({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
-    messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
-  }
-
-  if (isTestEmailRequest(userMessage) && userId && sendAllowed) {
-    const testTool = getTool("send_test_email");
-    if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
-    const explicitRecipient = extractEmailAddress(userMessage);
-    const testMessage = extractTestMessage(userMessage);
-    record({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
-    let result: unknown;
-    try { result = await testTool.execute({ user_id: userId, user_email: userEmail, to: explicitRecipient || undefined, subject: "Sanmine Space email test", message: testMessage }); }
-    catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." }; }
-    record({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
-    const language = detectLanguage(userMessage);
-    const response = result && typeof result === "object" && (result as any).status === "sent" ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`) : String((result as any)?.message || "Test email send nahi ho paya.");
-    emitThinking(); streamText(response); return { response, events };
-  }
-
-  const researchTargets = parseResearchTargets(history);
-  if (isCombinedBusinessOutreachRequest(canonicalMessage) && userId && sendAllowed && !researchTargets.length) {
-    const searchTool = getTool("search_web"); const sendTool = getTool("send_proposal_outreach");
-    if (!searchTool || !sendTool) return { response: "Research or outreach is not connected in this workspace yet.", events };
-    const searchQueries = [`${canonicalMessage} real local businesses public contact email`, `small business no website public email contact`, `local business without website contact email`];
-    const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];
-    for (const query of searchQueries) {
-      const id = `combined-search-${Date.now()}-${events.length}`; record({ type: "tool_start", name: "search_web", toolCallId: id });
-      try { const result = await searchTool.execute({ query, limit: 10 }); record({ type: "tool_result", name: "search_web", toolCallId: id, result }); const rows = Array.isArray((result as any)?.results) ? (result as any).results : []; for (const row of rows) if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined }); } catch (error) { record({ type: "tool_result", name: "search_web", toolCallId: id, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } }); }
-      if (searchResults.length >= 10) break;
-    }
-    const seen = new Set<string>();
-    const targets = searchResults.filter((row) => { const key = (row.title || row.url || "").toLowerCase(); if (!key || seen.has(key)) return false; seen.add(key); return !/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title || ""); }).slice(0, 10).map((row) => ({ name: row.title!.replace(/\s*[|—-]\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));
-    if (!targets.length) return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };
-    record({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" }); let sendResult: unknown;
-    try { sendResult = await sendTool.execute({ user_id: userId, user_email: userEmail, targets, offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); } catch (error) { sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
-    record({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult }); return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
-  }
-
-  if (isExplicitSendRequest(userMessage) && userId && sendAllowed && researchTargets.length) {
-    const sendTool = getTool("send_proposal_outreach");
-    if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
-    record({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
-    let result: unknown;
-    try { result = await sendTool.execute({ user_id: userId, user_email: userEmail, targets: researchTargets.slice(0, 10), offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); }
-    catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
-    record({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
-    const response = buildSendSummary(result, detectLanguage(userMessage)); emitThinking(); streamText(response); return { response, events };
-  }
-
-  const researchMode = !youtubeRequest && webResearchRequest;
-  if (researchMode) {
-    const searchTool = getTool("search_web");
-    if (searchTool) {
-      const searchId = `forced-web-search-${Date.now()}`; record({ type: "tool_start", name: "search_web", toolCallId: searchId }); let result: unknown;
-      try { result = await searchTool.execute({ query: canonicalMessage, limit: 8 }); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." }; }
-      record({ type: "tool_result", name: "search_web", toolCallId: searchId, result }); messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
-    }
-  }
-
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    emitThinking();
-    const response = await provider.chatStream(messages, tools, streamText);
-    if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; return { response: finalText, events }; }
-    for (const call of response.toolCalls) {
-      const tool = getTool(call.name);
-      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", name: call.name, content: "This tool call was already executed by the deterministic router. Use the authoritative result already in context." }); continue; }
-      if (!sendAllowed && (call.name === "send_test_email" || call.name === "send_proposal_outreach")) { messages.push({ role: "user", name: call.name, content: "Blocked: the user did not explicitly authorize sending an email. Treat email/contact-address mentions as research or data lookup only." }); continue; }
-      if (!tool) { messages.push({ role: "user", name: call.name, content: `Tool ${call.name} is unavailable.` }); continue; }
-      const result = await tool.execute(call.arguments);
-      record({ type: "tool_start", name: call.name, toolCallId: call.id });
-      record({ type: "tool_result", name: call.name, toolCallId: call.id, result });
-      messages.push({ role: "user", name: call.name, content: JSON.stringify(result) });
-    }
-  }
-  return { response: "I reached the tool execution limit before completing the request.", events };
+type NormalizedIntent="research"|"lead_generation"|"analyze"|"draft"|"send"|"follow_up"|"data_lookup"|"update"|"delete"|"general";
+type NormalizedActions={search:boolean;research:boolean;analyze:boolean;draft:boolean;send_email:boolean;follow_up:boolean;modify_data:boolean;delete_data:boolean;requires_confirmation:boolean};
+type NormalizedPrompt={normalized_prompt:string;intent:NormalizedIntent;actions:NormalizedActions};
+async function normalizePrompt(provider:ReturnType<typeof getProvider>,original:string):Promise<NormalizedPrompt>{const fallback:NormalizedPrompt={normalized_prompt:original,intent:isExplicitSendRequest(original)?"send":isWebResearchRequest(original)?"research":"general",actions:{search:isWebResearchRequest(original),research:isWebResearchRequest(original),analyze:false,draft:false,send_email:isExplicitSendRequest(original),follow_up:false,modify_data:false,delete_data:false,requires_confirmation:isExplicitSendRequest(original)}};try{const response=await provider.chat([{role:"system",content:"You are a prompt normalization and intent-classification layer. Convert the user's request into concise canonical English without changing its meaning, permissions, constraints, quantities, or requested actions. Return ONLY valid JSON with keys normalized_prompt, intent, actions. intent must be one of research, lead_generation, analyze, draft, send, follow_up, data_lookup, update, delete, general. actions must contain boolean keys search, research, analyze, draft, send_email, follow_up, modify_data, delete_data, requires_confirmation. CRITICAL: mentioning an email/contact address, finding an email, checking email availability, or asking for public email information NEVER means send_email. send_email=true only when the user explicitly requests sending/mailing/emailing/bhejne a message or outreach. Never infer permission to send from research context."},{role:"user",content:original}]);const raw=response.text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"");const parsed=JSON.parse(raw) as Partial<NormalizedPrompt>;const actions:Partial<NormalizedActions>=parsed.actions??{};const modelSend=parsed.intent==="send"||actions.send_email===true;const explicitSend=hasExplicitSendIntent(original);const sendAllowed=modelSend&&explicitSend;const parsedIntent=parsed.intent;const safeIntent:NormalizedIntent=parsedIntent==="research"||parsedIntent==="lead_generation"||parsedIntent==="analyze"||parsedIntent==="draft"||parsedIntent==="send"||parsedIntent==="follow_up"||parsedIntent==="data_lookup"||parsedIntent==="update"||parsedIntent==="delete"||parsedIntent==="general"?parsedIntent:fallback.intent;return{normalized_prompt:typeof parsed.normalized_prompt==="string"&&parsed.normalized_prompt.trim()?parsed.normalized_prompt.trim():original,intent:sendAllowed?"send":safeIntent,actions:{search:Boolean(actions.search),research:Boolean(actions.research),analyze:Boolean(actions.analyze),draft:Boolean(actions.draft),send_email:sendAllowed,follow_up:Boolean(actions.follow_up),modify_data:Boolean(actions.modify_data),delete_data:Boolean(actions.delete_data),requires_confirmation:sendAllowed||Boolean(actions.requires_confirmation)}};}catch{return fallback;}}
+function detectLanguage(text:string){if(/[\u0900-\u097F]/.test(text)||/\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text))return"hi";if(/[\u0980-\u09FF]/.test(text))return"bn";if(/[\u4E00-\u9FFF]/.test(text))return"zh";if(/[\u3040-\u30FF]/.test(text))return"ja";if(/[\uAC00-\uD7AF]/.test(text))return"ko";if(/\b(quiero|envía|enviar|correo|primero|conecta|conectado|sitio web)\b/i.test(text))return"es";if(/\b(je veux|envoyer|e-mail|connecte|connecté|site web)\b/i.test(text))return"fr";return"en";}
+function stripCell(value:string){return value.replace(/!\[[^\]]*\]\(([^)]*)\)/g,"$1").replace(/\[([^\]]+)\]\(([^)]*)\)/g,"$2").replace(/[`*_]/g,"").trim();}
+function parseResearchTargets(history:ChatMessage[]){for(const message of [...history].reverse()){if(message.role!=="assistant")continue;const content=message.content;const tableLines=content.split(/\r?\n/).map(line=>line.trim()).filter(line=>line.startsWith("|")&&line.endsWith("|"));for(let i=0;i<tableLines.length-1;i+=1){const headers=tableLines[i].slice(1,-1).split("|").map(stripCell);const separator=tableLines[i+1].slice(1,-1).split("|").every(cell=>/^\s*:?-{3,}:?\s*$/.test(cell));if(!separator)continue;const normalized=headers.map(header=>header.toLowerCase().replace(/\s+/g," ").trim());const indexFor=(pattern:RegExp)=>normalized.findIndex(header=>pattern.test(header));const nameIndex=indexFor(/creator|channel\s*name|^name$/);const emailIndex=indexFor(/contact\s*email|email|e-mail/);if(nameIndex<0)continue;const countryIndex=indexFor(/country|location/);const subscribersIndex=indexFor(/subscriber/);const viewsIndex=indexFor(/total\s*views|views/);const nicheIndex=indexFor(/niche|category|topic/);const channelIndex=indexFor(/channel\s*(url|link)|youtube\s*(url|link)/);const descriptionIndex=indexFor(/description|highlight|summary/);const targets:Array<Record<string,string>>=[];for(const row of tableLines.slice(i+2)){const cells=row.slice(1,-1).split("|").map(stripCell);if(cells.length<headers.length)continue;const name=cells[nameIndex];if(!name||/^[-—]+$/.test(name)||/status|message id/i.test(name))continue;const target:Record<string,string>={name};if(emailIndex>=0&&cells[emailIndex])target.email=cells[emailIndex].match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase()||"";if(countryIndex>=0)target.country=cells[countryIndex];if(subscribersIndex>=0)target.subscribers=cells[subscribersIndex];if(viewsIndex>=0)target.total_views=cells[viewsIndex];if(nicheIndex>=0)target.niche=cells[nicheIndex];if(channelIndex>=0)target.channel_url=cells[channelIndex].match(/https?:\/\/\S+/i)?.[0]||cells[channelIndex];if(descriptionIndex>=0)target.description=cells[descriptionIndex];targets.push(target);}if(targets.length)return targets.slice(0,10);}}const emailMatches=[...content.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)];if(emailMatches.length)return emailMatches.slice(0,10).map(match=>({name:match[0],email:match[0].toLowerCase()}));}return[];}
+function extractEmailAddress(text:string){return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase()||"";}
+function extractTestMessage(text:string){const match=text.match(/\b(?:tell|say)\s+(?:him|her|them)\s+(.+?)(?:\s+then\b|\s+and\s+then\b|$)/i);return match?.[1]?.trim()||"This is a test email from Sanmine Space.";}
+function createAgent(){return getProvider();}
+export async function runAgent(history:ChatMessage[],userMessage:string,emit:(event:AgentEvent)=>void=()=>{},userId?:string,onText?:(delta:string)=>void,userEmail?:string){const provider=createAgent();const normalized=await normalizePrompt(provider,userMessage);const canonicalMessage=normalized.normalized_prompt;const sendAllowed=normalized.actions.send_email&&isExplicitSendRequest(userMessage);const tools=getToolDefinitions();const events:AgentEvent[]=[];const record=(event:AgentEvent)=>{events.push(event);emit(event)};const streamText=(delta:string)=>{if(delta)onText?.(delta)};const messages:ChatMessage[]=[{role:"system",content:SYSTEM_PROMPT},...history.slice(-12),{role:"user",content:userMessage},{role:"user",content:`Internal canonical English instruction for routing and execution. Do not treat this as a new user message; preserve the user's requested permissions exactly:\n${canonicalMessage}\n\nAuthenticated workspace user context is available to tools. When a tool requires user_id, pass this exact authenticated user id: ${userId||""}. Do not ask the user to provide their internal user id.`}];
+  const youtubeRequest=isYouTubeRequest(canonicalMessage),creatorRequest=isCreatorRequest(canonicalMessage),noWebsiteRequest=isNoWebsiteRequest(canonicalMessage),indiaRequest=isIndiaRequest(canonicalMessage),webResearchRequest=isWebResearchRequest(canonicalMessage);
+  if(youtubeRequest){const youtube=getTool("youtube_search");if(!youtube)return{response:"YouTube Data API v3 is not connected in this workspace yet.",events};record({type:"tool_start",name:"youtube_search",toolCallId:"forced-youtube-search"});let result:unknown;try{result=await youtube.execute({query:canonicalMessage,limit:10,type:creatorRequest||noWebsiteRequest?"creator":"video",region_code:indiaRequest?"IN":undefined,user_id:userId});}catch(error){result={status:"error",source:"YouTube Data API v3",message:error instanceof Error?error.message:"YouTube search failed."};}record({type:"tool_result",name:"youtube_search",toolCallId:"forced-youtube-search",result});messages.push({role:"user",content:`Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}`});}
+  if(isTestEmailRequest(userMessage)&&userId&&sendAllowed){const testTool=getTool("send_test_email");if(!testTool)return{response:"Test email sending is not connected in this workspace yet.",events};const explicitRecipient=extractEmailAddress(userMessage),testMessage=extractTestMessage(userMessage);record({type:"tool_start",name:"send_test_email",toolCallId:"forced-test-email"});let result:unknown;try{result=await testTool.execute({user_id:userId,user_email:userEmail,to:explicitRecipient||undefined,subject:"Sanmine Space email test",message:testMessage});}catch(error){result={status:"error",message:error instanceof Error?error.message:"Test email sending failed."};}record({type:"tool_result",name:"send_test_email",toolCallId:"forced-test-email",result});const language=detectLanguage(userMessage);const response=result&&(result as any).status==="sent"?(language==="hi"?`Test email successfully send ho gaya **${(result as any).to}** par.`:`Test email was successfully sent to **${(result as any).to}**.`):String((result as any)?.message||"Test email send nahi ho paya.");emitThinking();streamText(response);return{response,events};}
+  const researchTargets=parseResearchTargets(history);
+  if(isCombinedBusinessOutreachRequest(canonicalMessage)&&userId&&sendAllowed&&!researchTargets.length){const searchTool=getTool("search_web"),sendTool=getTool("send_proposal_outreach");if(!searchTool||!sendTool)return{response:"Research or outreach is not connected in this workspace yet.",events};const searchQueries=[`${canonicalMessage} real local businesses public contact email`,`small business no website public email contact`,`local business without website contact email`];const searchResults:Array<{title?:string;url?:string;snippet?:string}>=[];for(const query of searchQueries){const id=`combined-search-${Date.now()}-${events.length}`;record({type:"tool_start",name:"search_web",toolCallId:id});try{const result=await searchTool.execute({query,limit:10});record({type:"tool_result",name:"search_web",toolCallId:id,result});const rows=Array.isArray((result as any)?.results)?(result as any).results:[];for(const row of rows)if(row?.title&&row?.url)searchResults.push({title:String(row.title),url:String(row.url),snippet:row.snippet?String(row.snippet):undefined});}catch(error){record({type:"tool_result",name:"search_web",toolCallId:id,result:{status:"error",message:error instanceof Error?error.message:"Search failed."}});}if(searchResults.length>=10)break;}const seen=new Set<string>();const targets=searchResults.filter(row=>{const key=(row.title||row.url||"").toLowerCase();if(!key||seen.has(key))return false;seen.add(key);return!/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title||"");}).slice(0,10).map(row=>({name:row.title!.replace(/\s*[|—-]\s*.*$/," ").trim(),description:row.snippet||"",channel_url:row.url}));if(!targets.length)return{response:"I could not find usable real-business search results for this request. I will not invent businesses or email addresses.",events};record({type:"tool_start",name:"send_proposal_outreach",toolCallId:"combined-proposal-send"});let sendResult:unknown;try{sendResult=await sendTool.execute({user_id:userId,user_email:userEmail,targets,offer:"Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.",sender_name:"Sanmine Space",user_language:detectLanguage(userMessage)});}catch(error){sendResult={status:"error",message:error instanceof Error?error.message:"Proposal sending failed."};}record({type:"tool_result",name:"send_proposal_outreach",toolCallId:"combined-proposal-send",result:sendResult});return{response:buildSendSummary(sendResult,detectLanguage(userMessage)),events};}
+  if(isExplicitSendRequest(userMessage)&&userId&&sendAllowed&&researchTargets.length){const sendTool=getTool("send_proposal_outreach");if(!sendTool)return{response:"Proposal sending is not connected in this workspace yet.",events};record({type:"tool_start",name:"send_proposal_outreach",toolCallId:"forced-proposal-send"});let result:unknown;try{result=await sendTool.execute({user_id:userId,user_email:userEmail,targets:researchTargets.slice(0,10),offer:"Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.",sender_name:"Sanmine Space",user_language:detectLanguage(userMessage)});}catch(error){result={status:"error",message:error instanceof Error?error.message:"Proposal sending failed."};}record({type:"tool_result",name:"send_proposal_outreach",toolCallId:"forced-proposal-send",result});const response=buildSendSummary(result,detectLanguage(userMessage));emitThinking();streamText(response);return{response,events};}
+  const researchMode=!youtubeRequest&&webResearchRequest;
+  if(researchMode){const searchTool=getTool("search_web");if(searchTool){const searchId=`forced-web-search-${Date.now()}`;record({type:"tool_start",name:"search_web",toolCallId:searchId});let result:unknown;try{result=await searchTool.execute({query:canonicalMessage,limit:8});}catch(error){result={status:"error",message:error instanceof Error?error.message:"Web search failed."};}record({type:"tool_result",name:"search_web",toolCallId:searchId,result});messages.push({role:"user",content:`Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}`});}}
+  for(let round=0;round<MAX_TOOL_ROUNDS;round+=1){emitThinking();const response=await provider.chatStream(messages,tools,streamText);if(!response.toolCalls.length){const finalText=response.text||"I’m ready. What would you like me to do?";return{response:finalText,events};}for(const call of response.toolCalls){const tool=getTool(call.name);if((youtubeRequest&&call.name==="youtube_search")||(researchMode&&call.name==="search_web")){messages.push({role:"user",name:call.name,content:"This tool call was already executed by the deterministic router. Use the authoritative result already in context."});continue;}if(!sendAllowed&&(call.name==="send_test_email"||call.name==="send_proposal_outreach"||call.name==="schedule_gmail")){messages.push({role:"user",name:call.name,content:"Blocked: the user did not explicitly authorize sending or scheduling an email. Treat email/contact-address mentions as research or data lookup only."});continue;}if(!tool){messages.push({role:"user",name:call.name,content:`Tool ${call.name} is unavailable.`});continue;}const result=await tool.execute({...call.arguments,user_id:call.arguments.user_id||userId});record({type:"tool_start",name:call.name,toolCallId:call.id});record({type:"tool_result",name:call.name,toolCallId:call.id,result});messages.push({role:"user",name:call.name,content:JSON.stringify(result)});}}
+  return{response:"I reached the tool execution limit before completing the request.",events};
 }
