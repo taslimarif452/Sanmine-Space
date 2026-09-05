@@ -9,6 +9,7 @@ import { PricingPortal } from "@/components/pricing-portal";
 import { CookieConsent } from "@/components/cookie-consent";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { DelayedSkeleton } from "@/components/loading-skeleton";
+import { cachedApiFetch } from "@/lib/client/api-cache";
 
 const AuthUserContext=createContext<User|null>(null);
 export function useAuthUser(){return useContext(AuthUserContext)}
@@ -45,8 +46,8 @@ function AuthLoadingSkeleton(){
 export function AuthGate({children}:{children:ReactNode}){
   const pathname=usePathname();
   const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
-  useEffect(()=>{let unsubscribe=()=>{};try{unsubscribe=onAuthStateChanged(getFirebaseAuth(),async next=>{setUser(next);setLoading(false);if(next){try{const token=await next.getIdToken();await fetch("/api/users/sync",{method:"POST",headers:{Authorization:`Bearer ${token}`}})}catch(e){console.error("User sync failed",e)}}})}catch(e){console.error(e);setError(e instanceof Error?e.message:"Firebase configuration is missing.");setLoading(false)}return()=>unsubscribe()},[]);
-  useEffect(()=>{if(!user)return;const originalFetch=window.fetch.bind(window);const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==="string"?input:input instanceof URL?input.toString():input.url;if(!url.startsWith("/api/"))return originalFetch(input,init);const token=await user.getIdToken();const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));headers.set("Authorization",`Bearer ${token}`);return originalFetch(input,{...init,headers})};window.fetch=wrapped as typeof window.fetch;return()=>{window.fetch=originalFetch}},[user]);
+  useEffect(()=>{let unsubscribe=()=>{};try{unsubscribe=onAuthStateChanged(getFirebaseAuth(),async next=>{setUser(next);setLoading(false);if(next){try{const token=await next.getIdToken();await fetch("/api/users/sync",{method:"POST",headers:{Authorization:`Bearer ${token}`})}catch(e){console.error("User sync failed",e)}}})}catch(e){console.error(e);setError(e instanceof Error?e.message:"Firebase configuration is missing.");setLoading(false)}return()=>unsubscribe()},[]);
+  useEffect(()=>{if(!user)return;const originalFetch=window.fetch.bind(window);const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==="string"?input:input instanceof URL?input.toString():input.url;if(!url.startsWith("/api/"))return originalFetch(input,init);const token=await user.getIdToken();const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));headers.set("Authorization",`Bearer ${token}`);return cachedApiFetch(originalFetch,input,{...init,headers})};window.fetch=wrapped as typeof window.fetch;return()=>{window.fetch=originalFetch}},[user]);
   if(loading)return <AuthLoadingSkeleton/>;
   if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
   if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
