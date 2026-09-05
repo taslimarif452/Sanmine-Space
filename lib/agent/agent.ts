@@ -94,8 +94,6 @@ function parseResearchTargets(history: ChatMessage[]) {
       }
       if (targets.length) return targets.slice(0, 10);
     }
-
-    // Fallback for assistant research that was rendered without a strict Markdown table.
     const emailMatches = [...content.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0].toLowerCase());
     if (emailMatches.length >= 8) {
       const unique = [...new Set(emailMatches)].slice(0, 10);
@@ -129,26 +127,30 @@ function buildSendSummary(result: any, language: string) {
 function extractEmailAddress(text: string) { return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || ""; }
 function extractTestMessage(text: string) {
   const match = text.match(/\b(?:tell|say)\s+(?:him|her|them)\s+(.+?)(?:\s+then\b|\s+and\s+then\b|$)/i);
-  return match?.[1]?.trim() || "This is for testing.";
+  return match?.[1]?.trim() || "This is a test email from Sanmine Space.";
 }
 
-export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
-  const provider = getProvider();
+function createAgent() {
+  return getProvider();
+}
+
+export async function runAgent(history: ChatMessage[], userMessage: string, emit: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
+  const provider = createAgent();
   const tools = getToolDefinitions();
   const events: AgentEvent[] = [];
-  const emit = (event: AgentEvent) => { events.push(event); onEvent?.(event); };
+  const record = (event: AgentEvent) => { events.push(event); emit(event); };
   const streamText = (delta: string) => { if (delta) onText?.(delta); };
-  const emitThinking = () => emit({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
+  const emitThinking = () => record({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
   const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.slice(-12), { role: "user", content: userMessage }];
 
   if (isYouTubeRequest(userMessage)) {
     const youtube = getTool("youtube_search");
     if (!youtube) return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
-    emit({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
+    record({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
     let result: unknown;
     try { result = await youtube.execute({ query: userMessage, limit: 10, type: isCreatorRequest(userMessage) || isNoWebsiteRequest(userMessage) ? "creator" : "video", region_code: isIndiaRequest(userMessage) ? "IN" : undefined, user_id: userId }); }
     catch (error) { result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." }; }
-    emit({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
+    record({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
 
@@ -157,11 +159,11 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
     const explicitRecipient = extractEmailAddress(userMessage);
     const testMessage = extractTestMessage(userMessage);
-    emit({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
+    record({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
     let result: unknown;
     try { result = await testTool.execute({ user_id: userId, user_email: userEmail, to: explicitRecipient || undefined, subject: "Sanmine Space email test", message: testMessage }); }
     catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." }; }
-    emit({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
+    record({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
     const language = detectLanguage(userMessage);
     const response = result && typeof result === "object" && (result as any).status === "sent" ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`) : String((result as any)?.message || "Test email send nahi ho paya.");
     emitThinking(); streamText(response); return { response, events };
@@ -174,49 +176,50 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
     const searchQueries = [`${userMessage} real local businesses public contact email`, `small business no website public email contact`, `local business without website contact email`];
     const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];
     for (const query of searchQueries) {
-      const id = `combined-search-${Date.now()}-${events.length}`; emit({ type: "tool_start", name: "search_web", toolCallId: id });
-      try { const result = await searchTool.execute({ query, limit: 10 }); emit({ type: "tool_result", name: "search_web", toolCallId: id, result }); const rows = Array.isArray((result as any)?.results) ? (result as any).results : []; for (const row of rows) if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined }); } catch (error) { emit({ type: "tool_result", name: "search_web", toolCallId: id, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } }); }
+      const id = `combined-search-${Date.now()}-${events.length}`; record({ type: "tool_start", name: "search_web", toolCallId: id });
+      try { const result = await searchTool.execute({ query, limit: 10 }); record({ type: "tool_result", name: "search_web", toolCallId: id, result }); const rows = Array.isArray((result as any)?.results) ? (result as any).results : []; for (const row of rows) if (row?.title && row?.url) searchResults.push({ title: String(row.title), url: String(row.url), snippet: row.snippet ? String(row.snippet) : undefined }); } catch (error) { record({ type: "tool_result", name: "search_web", toolCallId: id, result: { status: "error", message: error instanceof Error ? error.message : "Search failed." } }); }
       if (searchResults.length >= 10) break;
     }
     const seen = new Set<string>();
     const targets = searchResults.filter((row) => { const key = (row.title || row.url || "").toLowerCase(); if (!key || seen.has(key)) return false; seen.add(key); return !/\b(best|guide|how to|how-to|tips|directory|directories|list of|find businesses|business ideas)\b/i.test(row.title || ""); }).slice(0, 10).map((row) => ({ name: row.title!.replace(/\s*[|—-]\s*.*$/, "").trim(), description: row.snippet || "", channel_url: row.url }));
     if (!targets.length) return { response: "I could not find usable real-business search results for this request. I will not invent businesses or email addresses.", events };
-    emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" }); let sendResult: unknown;
+    record({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "combined-proposal-send" }); let sendResult: unknown;
     try { sendResult = await sendTool.execute({ user_id: userId, user_email: userEmail, targets, offer: "Build a professional website for the business and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); } catch (error) { sendResult = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
-    emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult }); return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
+    record({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult }); return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
   }
 
   if (isExplicitSendRequest(userMessage) && userId && researchTargets.length) {
     const sendTool = getTool("send_proposal_outreach");
     if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
-    emit({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
+    record({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
     let result: unknown;
     try { result = await sendTool.execute({ user_id: userId, user_email: userEmail, targets: researchTargets.slice(0, 10), offer: "Build a professional website for the creator and provide a free custom homepage demo for review, with no obligation.", sender_name: "Sanmine Space", user_language: detectLanguage(userMessage) }); }
     catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Proposal sending failed." }; }
-    emit({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
-    const response = buildSendSummary(result, detectLanguage(userMessage)); emitThinking(); for (let i = 0; i < response.length; i += 18) streamText(response.slice(i, i + 18)); return { response, events };
+    record({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "forced-proposal-send", result });
+    const response = buildSendSummary(result, detectLanguage(userMessage)); emitThinking(); streamText(response); return { response, events };
   }
 
   const researchMode = !isYouTubeRequest(userMessage) && isWebResearchRequest(userMessage);
   if (researchMode) {
     const searchTool = getTool("search_web");
     if (searchTool) {
-      const searchId = `forced-web-search-${Date.now()}`; emit({ type: "tool_start", name: "search_web", toolCallId: searchId }); let result: unknown;
+      const searchId = `forced-web-search-${Date.now()}`; record({ type: "tool_start", name: "search_web", toolCallId: searchId }); let result: unknown;
       try { result = await searchTool.execute({ query: userMessage, limit: 8 }); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." }; }
-      emit({ type: "tool_result", name: "search_web", toolCallId: searchId, result }); messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
+      record({ type: "tool_result", name: "search_web", toolCallId: searchId, result }); messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
     }
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    emitThinking(); const response = await provider.chat(messages, tools);
-    if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; for (let i = 0; i < finalText.length; i += 24) streamText(finalText.slice(i, i + 24)); return { response: finalText, events }; }
+    emitThinking();
+    const response = await provider.chatStream(messages, tools, streamText);
+    if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; return { response: finalText, events }; }
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
       if ((isYouTubeRequest(userMessage) && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", content: `The ${call.name} request has already been executed above. Use the existing tool result and do not call ${call.name} again for this request.` }); continue; }
-      emit({ type: "tool_start", name: call.name, toolCallId: call.id }); let result: unknown;
+      record({ type: "tool_start", name: call.name, toolCallId: call.id }); let result: unknown;
       if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
       else { try { const argumentsForTool = (call.name === "send_proposal_outreach" || call.name === "send_test_email") && userId ? { ...call.arguments, user_id: userId, user_email: userEmail } : call.arguments; result = await tool.execute(argumentsForTool); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
-      emit({ type: "tool_result", name: call.name, toolCallId: call.id, result });
+      record({ type: "tool_result", name: call.name, toolCallId: call.id, result });
       if (response.text) messages.push({ role: "assistant", content: response.text }); messages.push({ role: "user", content: `Tool result for ${call.name} (call ${call.id}):\n${JSON.stringify(result)}` });
     }
   }
