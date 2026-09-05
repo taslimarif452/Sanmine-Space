@@ -158,10 +158,26 @@ export const sendProposalOutreachTool: AgentTool = {
       try {
         const result = await sendGmailForUser(userId, authEmail, { to: email, subject, body });
         if (result.status !== "sent") { skipped.push({ creator: clean(target.name) || "Prospect", reason: result.message }); continue; }
-        const approval = await sql`INSERT INTO email_approvals (user_id, connection_id, recipient, subject, body, status, approved_at, sent_at, provider_message_id) VALUES (${userId}, ${gmail.id}, ${email}, ${subject}, ${body}, 'sent', NOW(), NOW(), ${result.id || null}) RETURNING id`;
-        await sql`INSERT INTO email_events (user_id, approval_id, recipient, event_type, provider_message_id, provider_thread_id, metadata) VALUES (${userId}, ${approval[0]?.id || null}, ${email}, 'sent', ${result.id || null}, ${result.threadId || null}, ${JSON.stringify({ source: "agent_outreach" })}::jsonb`;
+
+        // Gmail has confirmed delivery to the Gmail API. Record the successful send
+        // immediately so a logging/database problem can never turn a real send into
+        // a false "failed" result in the assistant UI.
         sent.push({ creator: clean(target.name) || "Prospect", email, subject, message_id: result.id || "" });
-      } catch (error) { failed.push({ creator: clean(target.name) || "Prospect", email, reason: error instanceof Error ? error.message : "Gmail send failed." }); }
+
+        // Logging is best-effort only. The email itself is already sent successfully.
+        try {
+          const approval = await sql`INSERT INTO email_approvals (user_id, connection_id, recipient, subject, body, status, approved_at, sent_at, provider_message_id) VALUES (${userId}, ${gmail.id}, ${email}, ${subject}, ${body}, 'sent', NOW(), NOW(), ${result.id || null}) RETURNING id`;
+          try {
+            await sql`INSERT INTO email_events (user_id, approval_id, recipient, event_type, provider_message_id, provider_thread_id, metadata) VALUES (${userId}, ${approval[0]?.id || null}, ${email}, 'sent', ${result.id || null}, ${result.threadId || null}, ${JSON.stringify({ source: "agent_outreach" })}::jsonb)`;
+          } catch (eventError) {
+            console.error("Email event logging warning:", eventError);
+          }
+        } catch (logError) {
+          console.error("Email approval logging warning:", logError);
+        }
+      } catch (error) {
+        failed.push({ creator: clean(target.name) || "Prospect", email, reason: error instanceof Error ? error.message : "Gmail send failed." });
+      }
     }
     return { status: sent.length ? "sent" : failed.length ? "failed" : "completed", sender: gmail.email, sent, skipped, failed, sent_count: sent.length, skipped_count: skipped.length, failed_count: failed.length };
   }
