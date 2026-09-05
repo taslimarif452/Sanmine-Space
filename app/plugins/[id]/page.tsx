@@ -47,12 +47,13 @@ export default function PluginManagePage({ params }: PluginManagePageProps) {
     }
   }, [id, user?.uid]);
 
-  const loadConnection = async () => {
+  const loadConnection = async (refresh = false) => {
     if (!user || !plugin?.oauth) return;
     try {
       const token = await user.getIdToken(true);
       const endpoint = isGmail ? "/api/email/connections" : "/api/plugins/connections";
-      const response = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const url = refresh ? `${endpoint}?refresh=${Date.now()}` : endpoint;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Unable to load connection.");
       const rows = Array.isArray(data.connections) ? data.connections : [];
@@ -66,7 +67,11 @@ export default function PluginManagePage({ params }: PluginManagePageProps) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("connected") === "1") setMessage(`${plugin?.name || "Plugin"} account connected successfully.`);
+    const connected = params.get("connected") === "1";
+    if (connected) {
+      setMessage(`${plugin?.name || "Plugin"} account connected successfully.`);
+      void loadConnection(true);
+    }
     if (params.get("error") === "1") setMessage(params.get("message") || "Provider authentication failed.");
     if (params.has("connected") || params.has("error")) window.history.replaceState({}, "", window.location.pathname);
   }, [plugin?.name]);
@@ -118,7 +123,7 @@ export default function PluginManagePage({ params }: PluginManagePageProps) {
       setConnection(null);
       setMessage(`${plugin.name} account has been disconnected.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to disconnect provider.");
+      setMessage(error instanceof Error ? error.message : "Unable to disconnect the provider.");
     } finally {
       setBusy(false);
     }
