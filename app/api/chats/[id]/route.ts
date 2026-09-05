@@ -37,3 +37,27 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json({ error: message }, { status: auth ? 401 : 503 });
   }
 }
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getRequestUser(request);
+    if (!hasDatabaseConfig()) return NextResponse.json({ error: "Database persistence is not configured." }, { status: 503 });
+
+    const { id } = await context.params;
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid chat id." }, { status: 400 });
+
+    const result = await sql`
+      DELETE FROM chats
+      WHERE id = ${id} AND user_id = ${user.uid}
+      RETURNING id
+    `;
+
+    if (!result.length) return NextResponse.json({ error: "Chat not found." }, { status: 404 });
+    return NextResponse.json({ deleted: true, chatId: id });
+  } catch (error) {
+    console.error("Chat delete error:", error);
+    const message = error instanceof Error ? error.message : "Unable to delete chat.";
+    const auth = /authentication|auth|token|credential|unauthorized|firebase/i.test(message);
+    return NextResponse.json({ error: message }, { status: auth ? 401 : 503 });
+  }
+}
