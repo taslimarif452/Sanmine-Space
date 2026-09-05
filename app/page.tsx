@@ -17,6 +17,7 @@ type StreamPacket={type?:string;event?:Event;delta?:string;response?:string;even
 const CACHE="v5";
 const rkey=(u:string)=>`sanmine:${CACHE}:recent:${u}`;
 const ckey=(u:string,c:string)=>`sanmine:${CACHE}:chat:${u}:${c}`;
+const BRAND_LOGO="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
 function read<T>(k:string):T|null{try{return typeof window==="undefined"?null:JSON.parse(localStorage.getItem(k)||"null")}catch{return null}}
 function write(k:string,v:unknown){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 function favicon(domain:string){return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`}
@@ -96,6 +97,7 @@ export default function Home(){
         </div>
       </div>
       <div className="mx-auto w-full max-w-[900px] px-4 pb-6 md:px-8">
+        {isNew?<div className="mb-4 flex items-center justify-center gap-3 px-1"><img src={BRAND_LOGO} alt="Sanmine Space" className="h-10 w-10 shrink-0 rounded-xl object-cover"/><div className="font-serif text-[34px] font-medium leading-none tracking-[-.045em] text-[#282721]">Let's noodle</div></div>:null}
         <Composer value={text} setValue={setText} onSubmit={submit} onStop={stop} loading={loading}/>
         {isNew?<div className="mt-3 grid grid-cols-2 gap-2">{templateMessages.map(t=><button key={t} type="button" onClick={()=>setText(t)} className="min-w-0 rounded-xl border border-[#e2dfd8] bg-white px-3 py-2.5 text-left text-[13px] leading-5 text-[#5f5b53]">{t}</button>)}</div>:null}
       </div>
