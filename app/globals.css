@@ -27,3 +27,9 @@ main.relative.flex.h-screen.min-h-0.overflow-hidden>span.pointer-events-none.fix
 /* Keep the workspace surfaces on the same warm off-white canvas. */
 .sanmine-workspace-shell{background:var(--bg)!important}
 .sanmine-workspace-shell main,.sanmine-workspace-shell main>section{background:var(--bg)!important}
+/* Chat composer */
+.relative.rounded-\[22px\].border.border-\[\#dcd9d1\].p-2{background:#fff!important}
+/* Search fields */
+input[type="search"],input[placeholder*="Search"],input[placeholder*="search"]{background:#fff!important}
+/* Emails: Refresh is a text/icon control, not a bordered button. */
+button:has(> svg.lucide-refresh-cw){border:0!important;background:transparent!important;box-shadow:none!important}
