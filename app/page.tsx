@@ -37,6 +37,7 @@ export default function Home(){
   const [loading,setLoading]=useState(false); const [loadingChat,setLoadingChat]=useState(false);
   const [status,setStatus]=useState(""); const [steps,setSteps]=useState<string[]>([]); const [error,setError]=useState("");
   const scrollRef=useRef<HTMLDivElement>(null); const followRef=useRef(true); const abortRef=useRef<AbortController|null>(null);
+  const typingTargetRef=useRef(""); const typingDisplayedRef=useRef(""); const typingFrameRef=useRef<number|null>(null);
   const [copied,setCopied]=useState<number|null>(null);
 
   const scrollLatest=(behavior:ScrollBehavior="smooth")=>{const el=scrollRef.current;if(!el)return;el.scrollTo({top:el.scrollHeight,behavior});followRef.current=true};
@@ -47,13 +48,42 @@ export default function Home(){
   useEffect(()=>{if(!user||!routeChatId)return;if(active===routeChatId&&msgs.length)return;void openChat(routeChatId)},[user,routeChatId]);
   useEffect(()=>{if(msgs.length&&active)requestAnimationFrame(()=>scrollLatest("auto"))},[active]);
   useEffect(()=>{if(followRef.current)requestAnimationFrame(()=>scrollLatest("auto"))},[msgs,loading,status]);
+  useEffect(()=>()=>{if(typingFrameRef.current!==null)cancelAnimationFrame(typingFrameRef.current)},[]);
 
-  const fresh=()=>{if(loading)abortRef.current?.abort();router.push("/",{scroll:false});setActive(null);setMsgs([]);setText("");setError("");setStatus("");setSteps([]);followRef.current=true};
+  const updateStreamingMessage=(base:Message[],q:string,content:string)=>{setMsgs([...base,{role:"user" as const,content:q},{role:"assistant" as const,content,metadata:{kind:"streaming"}}])};
+  const runTypingAnimation=(base:Message[],q:string)=>{
+    if(typingFrameRef.current!==null)return;
+    let previous=performance.now();
+    const tick=(now:number)=>{
+      const target=typingTargetRef.current;
+      const displayed=typingDisplayedRef.current;
+      if(displayed.length<target.length){
+        const elapsed=now-previous;
+        const chars=Math.max(1,Math.floor(elapsed*0.085));
+        typingDisplayedRef.current=target.slice(0,displayed.length+chars);
+        updateStreamingMessage(base,q,typingDisplayedRef.current);
+        previous=now;
+      }
+      if(typingDisplayedRef.current.length<typingTargetRef.current.length){typingFrameRef.current=requestAnimationFrame(tick)}else{typingFrameRef.current=null}
+    };
+    typingFrameRef.current=requestAnimationFrame(tick);
+  };
+  const finishTyping=async(base:Message[],q:string,content:string)=>{
+    typingTargetRef.current=content;
+    if(typingDisplayedRef.current.length>=content.length){typingDisplayedRef.current=content;return;}
+    runTypingAnimation(base,q);
+    await new Promise<void>(resolve=>{
+      const wait=()=>{if(typingDisplayedRef.current.length>=typingTargetRef.current.length){resolve();return}requestAnimationFrame(wait)};
+      wait();
+    });
+  };
+
+  const fresh=()=>{if(loading)abortRef.current?.abort();router.push("/",{scroll:false});setActive(null);setMsgs([]);setText("");setError("");setStatus("");setSteps([]);typingTargetRef.current="";typingDisplayedRef.current="";if(typingFrameRef.current!==null){cancelAnimationFrame(typingFrameRef.current);typingFrameRef.current=null}followRef.current=true};
   const stop=()=>{abortRef.current?.abort();setStatus("Stopping");};
 
   const send=async(q:string,base:Message[],chatId:string|null)=>{
     if(!user||!q.trim())return;
-    setLoading(true);setStatus("Thinking");setSteps([]);setError("");followRef.current=true;requestAnimationFrame(()=>scrollLatest("smooth"));
+    setLoading(true);setStatus("Thinking");setSteps([]);setError("");followRef.current=true;typingTargetRef.current="";typingDisplayedRef.current="";if(typingFrameRef.current!==null){cancelAnimationFrame(typingFrameRef.current);typingFrameRef.current=null}requestAnimationFrame(()=>scrollLatest("smooth"));
     const controller=new AbortController();abortRef.current=controller;let answer="",streamed="",events:Event[]=[],id=chatId;
     try{
       const token=await user.getIdToken();
@@ -66,7 +96,7 @@ export default function Home(){
         try{d=JSON.parse(line)}catch{return}
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);window.dispatchEvent(new CustomEvent("sanmine:chat-created",{detail:{chat:n[0]}}));return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking")setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");if(e.type==="tool_start"){const [,label]=statusFor(e.name);setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&typeof d.delta==="string"&&d.delta.length){streamed+=d.delta;setStatus("Writing answer");setMsgs(prev=>{const withoutStreaming=prev.filter((m)=>!(m.role==="assistant"&&m.metadata?.kind==="streaming"));return [...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed,metadata:{kind:"streaming"}}]});}
+        if(d.type==="delta"&&typeof d.delta==="string"&&d.delta.length){streamed+=d.delta;typingTargetRef.current=streamed;setStatus("Writing answer");runTypingAnimation(base,q);}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
@@ -74,8 +104,9 @@ export default function Home(){
       buffer+=decoder.decode();if(buffer.trim())consume(buffer);
       if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
       const src=collectSources(events);const metadata:Metadata={kind:"chat_response",durationMs:0,eventCount:events.length,toolCount:events.filter(e=>e.type==="tool_start").length,sources:src};
+      await finishTyping(base,q,answer);
       const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);void loadChats(true);
-    }catch(e){if((e as Error)?.name==="AbortError"){setError("Generation stopped.");if(streamed){const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
+    }catch(e){if((e as Error)?.name==="AbortError"){typingTargetRef.current="";if(typingFrameRef.current!==null){cancelAnimationFrame(typingFrameRef.current);typingFrameRef.current=null}setError("Generation stopped.");if(streamed){const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
     finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
