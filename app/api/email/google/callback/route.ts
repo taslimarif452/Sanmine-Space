@@ -23,7 +23,7 @@ async function ensureTable() {
 
 export async function GET(request: Request) {
   const origin = new URL(request.url).origin;
-  const redirect = (result: string) => NextResponse.redirect(`${origin}/?email_oauth=${encodeURIComponent(result)}`);
+  const redirect = (result: string) => NextResponse.redirect(`${origin}/plugins/gmail?email_oauth=${encodeURIComponent(result)}`);
   try {
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
