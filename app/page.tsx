@@ -65,7 +65,7 @@ export default function Home(){
         try{d=JSON.parse(line)}catch{return}
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking")setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");if(e.type==="tool_start"){const [,label]=statusFor(e.name);setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");const next=[...base,{role:"user",content:q},{role:"assistant",content:streamed}];setMsgs(next);}
+        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");const next:Message[]=[...base,{role:"user",content:q},{role:"assistant",content:streamed}];setMsgs(next);}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
@@ -78,7 +78,7 @@ export default function Home(){
     finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
-  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=msgs;setMsgs([...base,{role:"user",content:q}]);setText("");if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
+  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=msgs;setMsgs([...base,{role:"user" as const,content:q}]);setText("");if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
   const copyMessage=async(index:number)=>{try{await navigator.clipboard.writeText(msgs[index].content);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{}};
   void copyMessage;
   void fresh;
