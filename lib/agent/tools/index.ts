@@ -6,6 +6,7 @@ import { generateProposalTool } from "@/lib/agent/tools/generate-proposal";
 import { generateEmailTool } from "@/lib/agent/tools/generate-email";
 import { sendProposalOutreachTool } from "@/lib/agent/tools/send-proposal-outreach";
 import { sendTestEmailTool } from "@/lib/agent/tools/send-test-email";
+import { sendEmailTool } from "@/lib/agent/tools/send-email";
 import { youtubeSearchTool } from "@/lib/agent/tools/youtube-search";
 import { researchLeadsTool } from "@/lib/agent/tools/research-leads";
 
@@ -18,6 +19,7 @@ const rawTools: AgentTool[] = [
   generateProposalTool,
   generateEmailTool,
   sendProposalOutreachTool,
+  sendEmailTool,
   sendTestEmailTool,
 ];
 
@@ -72,10 +74,8 @@ function normalizeToolResult(name: string, result: unknown): Record<string, unkn
 }
 
 async function executeWithBudget(tool: AgentTool, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-  // Research tools can legitimately need more time than lightweight tools.
-  // Keep send actions bounded, but do not abort a real YouTube research run after 30s.
   const timeoutMs = tool.name === "youtube_search" ? 120_000 : tool.name === "search_web" ? 30_000 : tool.name === "open_page" ? 20_000 : 30_000;
-  const attempts = tool.name === "send_proposal_outreach" || tool.name === "send_test_email" ? 1 : 2;
+  const attempts = tool.name === "send_proposal_outreach" || tool.name === "send_email" || tool.name === "send_test_email" ? 1 : 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -105,7 +105,7 @@ const toolTestTool: AgentTool = {
   execute: async () => {
     const results: Array<Record<string, unknown>> = [];
     for (const tool of tools) {
-      if (tool.name === "send_proposal_outreach" || tool.name === "send_test_email") {
+      if (tool.name === "send_proposal_outreach" || tool.name === "send_email" || tool.name === "send_test_email") {
         results.push({ tool: tool.name, status: "skipped", reason: "External send action requires an explicit user-approved send operation." });
         continue;
       }
