@@ -23,6 +23,7 @@ TOOL ROUTING — IMPORTANT:
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
 - If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as 'to' and send to that exact address. Never replace an explicit recipient with the connected Gmail account.
 - IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, use send_proposal_outreach and do not stop at drafting. The tool must verify the connected Gmail account before sending.
+- IMPORTANT SCHEDULING ACTION: If the user asks to schedule an email, use schedule_gmail. Never say an email was scheduled unless the tool returns status="scheduled" and scheduled=true. If it returns needs_connection or an error, report that exact failure and do not claim success.
 - For a researched creator list from an earlier assistant response, send to the exact verified contact emails in that research result. Do not discard the research list and do not substitute the connected sender account as recipient.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
 

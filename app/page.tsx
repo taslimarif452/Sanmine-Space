@@ -44,9 +44,29 @@ export default function Home(){
   const scrollLatest=(behavior:ScrollBehavior="smooth")=>{const el=scrollRef.current;if(!el)return;el.scrollTo({top:el.scrollHeight,behavior});followRef.current=true};
   const onScroll=()=>{const el=scrollRef.current;if(!el)return;const d=el.scrollHeight-el.scrollTop-el.clientHeight;followRef.current=d<140};
   const loadChats=async(bg=false)=>{if(!user)return;const cache=read<Chat[]>(rkey(user.uid));if(cache&&!bg)setChats(cache);try{const t=await user.getIdToken(),r=await fetch("/api/chats",{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});if(!r.ok)return;const d=await r.json();const xs=Array.isArray(d.chats)?d.chats:[];setChats(xs);write(rkey(user.uid),xs)}catch{}};
-  const openChat=async(id:string)=>{if(loading||loadingChat||!user)return;setActive(id);router.push(`/chat/${id}`,{scroll:false});setError("");const cache=read<Message[]>(ckey(user.uid,id));if(cache)setMsgs(cache);else setMsgs([]);setLoadingChat(!cache);try{const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}`,{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});if(!r.ok)throw new Error("Unable to load this chat.");const d=await r.json();const xs=Array.isArray(d.messages)?d.messages.map((m:any)=>{const md=m.metadata&&typeof m.metadata==="object"?m.metadata:{};const persistedSources=Array.isArray(md.sources)?md.sources.map(cleanSource).filter(Boolean) as Source[]:[];return {id:String(m.id||""),role:m.role==="assistant"?"assistant":"user",content:String(m.content||""),metadata:md,sources:persistedSources}}):[];setMsgs(xs);write(ckey(user.uid,id),xs)}catch(e){setError(e instanceof Error?e.message:"Unable to load this chat.")}finally{setLoadingChat(false)}};
+  const loadChat=async(id:string)=>{
+    if(!user)return;
+    setError("");
+    const cache=read<Message[]>(ckey(user.uid,id));
+    if(cache)setMsgs(cache);else setMsgs([]);
+    setLoadingChat(true);
+    try{
+      const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}`,{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});
+      if(!r.ok)throw new Error("Unable to load this chat.");
+      const d=await r.json();
+      const xs=Array.isArray(d.messages)?d.messages.map((m:any)=>{const md=m.metadata&&typeof m.metadata==="object"?m.metadata:{};const persistedSources=Array.isArray(md.sources)?md.sources.map(cleanSource).filter(Boolean) as Source[]:[];return {id:String(m.id||""),role:m.role==="assistant"?"assistant":"user",content:String(m.content||""),metadata:md,sources:persistedSources,created_at:m.created_at}}):[];
+      setMsgs(xs);
+      write(ckey(user.uid,id),xs);
+    }catch(e){setError(e instanceof Error?e.message:"Unable to load this chat.")}finally{setLoadingChat(false)}
+  };
+  const openChat=async(id:string)=>{
+    if(loading||loadingChat||!user)return;
+    setActive(id);
+    if(routeChatId===id)await loadChat(id);
+    else router.push(`/chat/${id}`,{scroll:false});
+  };
   useEffect(()=>{if(!user)return;void loadChats()},[user]);
-  useEffect(()=>{if(!user||!routeChatId)return;if(active===routeChatId&&msgs.length)return;void openChat(routeChatId)},[user,routeChatId]);
+  useEffect(()=>{if(!user||!routeChatId)return;void loadChat(routeChatId)},[user,routeChatId]);
   useEffect(()=>{if(msgs.length&&active)requestAnimationFrame(()=>scrollLatest("auto"))},[active]);
   useEffect(()=>{if(followRef.current)requestAnimationFrame(()=>scrollLatest("auto"))},[msgs,loading,status]);
   useEffect(()=>()=>{if(typingFrameRef.current!==null)cancelAnimationFrame(typingFrameRef.current)},[]);
