@@ -35,5 +35,5 @@ export default function ChatPage() {
     return () => { cancelled = true; };
   }, [user, id]);
 
-  return <Home />;
+  return <Home key={id} />;
 }
