@@ -56,23 +56,48 @@ async function readSse(response: Response, onData: (data: any) => void) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let eventData: string[] = [];
+
+  const flushEvent = () => {
+    if (!eventData.length) return;
+    const data = eventData.join("\n").trim();
+    eventData = [];
+    if (!data || data === "[DONE]") return;
+    try { onData(JSON.parse(data)); } catch { /* ignore malformed SSE event */ }
+  };
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() || "";
-    for (const block of blocks) {
-      const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
-      if (!data || data === "[DONE]") continue;
-      try { onData(JSON.parse(data)); } catch { /* ignore incomplete/non-JSON SSE blocks */ }
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data:")) {
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        if (data === "[DONE]") { eventData = []; continue; }
+        try {
+          onData(JSON.parse(data));
+          eventData = [];
+        } catch {
+          eventData.push(data);
+        }
+      } else if (!line.trim()) {
+        flushEvent();
+      }
     }
   }
+
   buffer += decoder.decode();
-  const data = buffer.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
-  if (data && data !== "[DONE]") {
-    try { onData(JSON.parse(data)); } catch { /* ignore malformed final block */ }
+  if (buffer.startsWith("data:")) {
+    const data = buffer.slice(5).trim();
+    if (data && data !== "[DONE]") {
+      try { onData(JSON.parse(data)); } catch { eventData.push(data); }
+    }
   }
+  flushEvent();
 }
 
 class GeminiProvider implements AIProvider {
