@@ -8,17 +8,20 @@ import { PremiumLanding } from "@/components/premium-landing";
 import { PricingPortal } from "@/components/pricing-portal";
 import { CookieConsent } from "@/components/cookie-consent";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { DelayedSkeleton } from "@/components/loading-skeleton";
 
 const AuthUserContext=createContext<User|null>(null);
 export function useAuthUser(){return useContext(AuthUserContext)}
 const PUBLIC_PATHS=new Set(["/","/privacy","/terms","/about","/contact"]);
+
+function AuthLoadingSkeleton(){return <DelayedSkeleton><div className="flex min-h-screen animate-pulse bg-[var(--bg)]"><div className="hidden w-[270px] shrink-0 border-r border-[var(--line)] bg-[var(--panel)] p-5 md:block"><div className="h-8 w-36 rounded-lg bg-[#e9e7e1]"/><div className="mt-9 space-y-3"><div className="h-10 rounded-lg bg-[#e9e7e1]"/><div className="h-10 rounded-lg bg-[#e9e7e1]"/><div className="h-10 rounded-lg bg-[#e9e7e1]"/></div></div><div className="flex min-w-0 flex-1 flex-col"><div className="h-14 border-b border-[var(--line)]"/><div className="flex flex-1 items-center justify-center px-5"><div className="w-full max-w-[760px] space-y-5"><div className="mx-auto h-12 w-12 rounded-2xl bg-[#e9e7e1]"/><div className="mx-auto h-10 w-64 rounded-xl bg-[#e9e7e1]"/><div className="mx-auto h-4 w-full max-w-lg rounded bg-[#e9e7e1]"/><div className="mt-8 h-20 rounded-[22px] bg-[#e9e7e1]"/></div></div></div></div></div></DelayedSkeleton>}
 
 export function AuthGate({children}:{children:React.ReactNode}){
  const pathname=usePathname();
  const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
  useEffect(()=>{let unsubscribe=()=>{};try{unsubscribe=onAuthStateChanged(getFirebaseAuth(),async next=>{setUser(next);setLoading(false);if(next){try{const token=await next.getIdToken();await fetch("/api/users/sync",{method:"POST",headers:{Authorization:`Bearer ${token}`}})}catch(e){console.error("User sync failed",e)}}})}catch(e){console.error(e);setError(e instanceof Error?e.message:"Firebase configuration is missing.");setLoading(false)}return()=>unsubscribe()},[]);
  useEffect(()=>{if(!user)return;const originalFetch=window.fetch.bind(window);const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==="string"?input:input instanceof URL?input.toString():input.url;if(!url.startsWith("/api/"))return originalFetch(input,init);const token=await user.getIdToken();const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));headers.set("Authorization",`Bearer ${token}`);return originalFetch(input,{...init,headers})};window.fetch=wrapped as typeof window.fetch;return()=>{window.fetch=originalFetch}},[user]);
- if(loading)return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted)]">Loading Sanmine Space…</div>;
+ if(loading)return <AuthLoadingSkeleton/>;
  if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
  if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
  return <AuthUserContext.Provider value={user}><div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden bg-[var(--bg)] text-[var(--text)]"><WorkspaceSidebar user={user} global/><div className="min-w-0 min-h-0 flex-1 overflow-y-auto [&>main>aside]:hidden">{children}</div></div></AuthUserContext.Provider>;
