@@ -28,6 +28,33 @@ export async function executeWithRetry<T>(fn: () => Promise<T>, label: string, t
 export function normalizeToolResult(name: string, toolCallId: string, value: unknown): ToolResult {
   if (value && typeof value === "object") {
     const source = value as Record<string, unknown>;
+
+    // Preserve structured YouTube records. The agent needs creator_name,
+    // contact_email, subscribers, website evidence, etc. to satisfy filters
+    // and produce a complete list. The old generic search normalizer discarded
+    // all of those fields and left only title/url/snippet.
+    if (name === "youtube_search") {
+      const normalized: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(source)) {
+        if (["raw", "svgSources", "functionCall", "functionResponse", "tool_result", "debug", "trace"].includes(key)) continue;
+        if (key !== "results") normalized[key] = item;
+      }
+      if (Array.isArray(source.results)) {
+        normalized.results = source.results.slice(0, 20).map((item) => {
+          if (!item || typeof item !== "object") return item;
+          const row = item as Record<string, unknown>;
+          const out: Record<string, unknown> = {};
+          for (const [key, itemValue] of Object.entries(row)) {
+            if (/^(raw|svgSources|functionCall|functionResponse|tool_result|debug|trace)$/i.test(key)) continue;
+            if (/^(url|channel_url)$/i.test(key) && itemValue !== undefined && !normalizeUrl(String(itemValue))) continue;
+            out[key] = typeof itemValue === "string" ? itemValue.slice(0, 12000) : itemValue;
+          }
+          return out;
+        });
+      }
+      return { toolCallId, name, result: normalized };
+    }
+
     const results = Array.isArray(source.results)
       ? source.results.map((item) => normalizeSearchItem(item)).filter(Boolean).slice(0, 20)
       : undefined;
