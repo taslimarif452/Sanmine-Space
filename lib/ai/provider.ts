@@ -1,6 +1,6 @@
 import type { ToolCall, ToolDefinition } from "@/lib/agent/tools/types";
 
-export type ChatMessage = { role: "user" | "assistant" | "system" | "tool"; content: string; name?: string };
+export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 export type AIProviderName = "gemini" | "openrouter";
 export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unknown };
 export interface AIProvider {
@@ -75,7 +75,7 @@ async function readSse(response: Response, onData: (data: any) => void) {
   buffer += decoder.decode();
   const data = buffer.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
   if (data && data !== "[DONE]") {
-    try { onData(JSON.parse(data)); } catch { /* ignore malformed final SSE block */ }
+    try { onData(JSON.parse(data)); } catch { /* ignore malformed final block */ }
   }
 }
 
