@@ -1,13 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronDown, Plus, Search, Settings, X } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { EmailConnections } from "@/components/email-connections";
 
 type Plugin = { id: string; name: string; description: string; category: string; logo: string; status: "Ready" | "Setup required"; billing: "No card" | "Free quota" | "OAuth" };
-
 const plugins: Plugin[] = [
   { id: "web", name: "Web Search", description: "Search the web for research and source-backed answers.", category: "Research", logo: "https://cdn.simpleicons.org/googlechrome", status: "Ready", billing: "Free quota" },
   { id: "github", name: "GitHub", description: "Connect repositories, issues, pull requests and code.", category: "Developer", logo: "https://cdn.simpleicons.org/github", status: "Setup required", billing: "OAuth" },
@@ -22,6 +21,7 @@ const plugins: Plugin[] = [
   { id: "firebase", name: "Firebase", description: "Connect Firebase project workflows.", category: "Developer", logo: "https://cdn.simpleicons.org/firebase", status: "Setup required", billing: "OAuth" },
   { id: "notion", name: "Notion", description: "Connect pages and databases for project context.", category: "Workspace", logo: "https://cdn.simpleicons.org/notion", status: "Setup required", billing: "OAuth" },
   { id: "rss", name: "RSS / News", description: "Read public RSS feeds without a paid news API.", category: "Research", logo: "https://cdn.simpleicons.org/rss", status: "Ready", billing: "No card" },
+  { id: "gmail", name: "Gmail", description: "Read and manage Gmail.", category: "Communication", logo: "https://cdn.simpleicons.org/gmail", status: "Setup required", billing: "OAuth" },
 ];
 const categories = ["All", "Research", "Workspace", "Developer", "Communication"];
 const storageKey = (uid: string) => `sanmine:installed-plugins:${uid}`;
@@ -64,20 +64,15 @@ export default function PluginsPage() {
           <div className="relative"><button type="button" onClick={() => setCategoryOpen((open) => !open)} className="flex items-center gap-1 text-[31px] font-semibold tracking-[-.04em] text-[#171614]">Plugins<ChevronDown size={19} strokeWidth={2.4} className="mt-1" /></button>{categoryOpen && <CategoryMenu cat={cat} setCat={setCat} close={() => setCategoryOpen(false)} />}</div>
           <button type="button" className="grid h-12 w-12 place-items-center rounded-full bg-white text-[#171614] shadow-[0_1px_5px_rgba(0,0,0,.06)]" aria-label="Plugin settings"><Settings size={25} strokeWidth={2.2} /></button>
         </header>
-
         <div className="mx-auto w-full max-w-[1120px] px-5 pb-12 pt-5 sm:px-8 sm:pt-8 md:px-10 md:pb-16 md:pt-12">
           <div className="hidden items-center justify-between md:flex"><div className="relative"><button type="button" onClick={() => setCategoryOpen((open) => !open)} className="flex items-center gap-1 text-3xl font-semibold tracking-[-.035em] text-[#282721]">Plugins<ChevronDown size={18} strokeWidth={2.3} className="mt-1" /></button>{categoryOpen && <CategoryMenu cat={cat} setCat={setCat} close={() => setCategoryOpen(false)} />}</div><button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-white text-[#38352f] shadow-[0_1px_5px_rgba(0,0,0,.05)]" aria-label="Plugin settings"><Settings size={21} /></button></div>
           <div className="mt-7 md:mt-6"><label className="flex h-[56px] w-full items-center gap-3 rounded-[28px] border border-[#dedbd5] bg-white px-5 shadow-[0_1px_3px_rgba(0,0,0,.025)] md:h-12 md:max-w-[420px] md:rounded-2xl md:px-4"><Search size={22} strokeWidth={1.9} className="shrink-0 text-[#8e8b86] md:h-[18px] md:w-[18px]" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search plugins" className="min-w-0 flex-1 bg-transparent text-[17px] text-[#302e29] outline-none placeholder:text-[#999792] md:text-sm" />{q && <button type="button" onClick={() => setQ("")} className="text-[#96928b]" aria-label="Clear search"><X size={17} /></button>}</label></div>
-
           <section className="mt-12 md:mt-10">
             <h2 className="text-[25px] font-medium tracking-[-.025em] text-[#22211f] md:text-[15px] md:font-semibold md:tracking-normal">Installed</h2>
             <div className="mt-5 flex min-h-[78px] items-center gap-4 overflow-x-auto pb-1 md:mt-4 md:min-h-0">
-              <div className="grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[22px] border border-[#e7e4df] bg-white shadow-[0_2px_8px_rgba(0,0,0,.035)] md:h-14 md:w-14 md:rounded-2xl"><img src="https://cdn.simpleicons.org/gmail" alt="Gmail logo" className="h-11 w-11 object-contain md:h-8 md:w-8" /></div>
-              {installedPlugins.map((plugin) => <div key={plugin.id} className="grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[22px] border border-[#e7e4df] bg-white shadow-[0_2px_8px_rgba(0,0,0,.035)] md:h-14 md:w-14 md:rounded-2xl" title={plugin.name}><img src={plugin.logo} alt={`${plugin.name} logo`} className="h-11 w-11 object-contain md:h-8 md:w-8" /></div>)}
+              {installedPlugins.length ? installedPlugins.map((plugin) => <Link key={plugin.id} href={`/plugins/${plugin.id}`} className="grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[22px] border border-[#e7e4df] bg-white shadow-[0_2px_8px_rgba(0,0,0,.035)] transition-transform hover:scale-[1.03] md:h-14 md:w-14 md:rounded-2xl" title={`Manage ${plugin.name}`}><img src={plugin.logo} alt={`${plugin.name} logo`} className="h-11 w-11 object-contain md:h-8 md:w-8" /></Link>) : <p className="py-4 text-sm text-[#969188]">No plugins installed yet.</p>}
             </div>
-            <div className="mt-5 md:mt-4"><EmailConnections user={user} /></div>
           </section>
-
           <section className="mt-12 md:mt-10">
             <div className="mb-5 flex items-end justify-between md:mb-4"><div><h2 className="text-[25px] font-medium tracking-[-.025em] text-[#22211f] md:text-[15px] md:font-semibold md:tracking-normal">Popular</h2><p className="mt-1 hidden text-xs text-[#9a958c] md:block">Available in Sanmine Space</p></div><span className="text-xs text-[#9a958c]">{filtered.length} plugins</span></div>
             <div className="grid grid-cols-1 gap-0 md:grid-cols-2 md:gap-x-12 lg:gap-x-20">
@@ -85,11 +80,8 @@ export default function PluginsPage() {
             </div>
             {!filtered.length && <p className="py-12 text-center text-sm text-[#858078]">No plugins found.</p>}
           </section>
-
-          <div className="mt-10 rounded-2xl border border-[#dfdcd5] bg-[#f5f3ed] p-5 sm:p-6"><div className="flex gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#e8e5dc] text-[#555148]"><Settings size={18} /></div><div><h2 className="text-sm font-semibold text-[#302e29]">Payment & security</h2><p className="mt-1 text-sm leading-6 text-[#77736a]">Sanmine does not collect card details for these connections. Provider quotas and billing policies still apply independently. Sanmine never silently enables paid billing.</p></div></div></div>
         </div>
       </section>
-
       {selectedPlugin && <PluginSetupModal plugin={selectedPlugin} onClose={() => setSelectedPlugin(null)} onInstall={installPlugin} />}
     </main>
   );
@@ -100,5 +92,5 @@ function CategoryMenu({ cat, setCat, close }: { cat: string; setCat: (value: str
 }
 
 function PluginSetupModal({ plugin, onClose, onInstall }: { plugin: Plugin; onClose: () => void; onInstall: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-0 sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="plugin-setup-title"><div className="w-full max-w-md rounded-t-[28px] bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,.16)] sm:rounded-[24px]"><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl border border-[#e8e5df] bg-white"><img src={plugin.logo} alt="" className="h-8 w-8 object-contain" /></div><div><h2 id="plugin-setup-title" className="text-lg font-semibold text-[#282721]">Set up {plugin.name}</h2><p className="mt-0.5 text-xs text-[#96918a]">{plugin.category}</p></div></div><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-[#f4f2ee] text-[#555148]" aria-label="Close setup"><X size={18} /></button></div><p className="mt-5 text-sm leading-6 text-[#77736a]">{plugin.description}</p><div className="mt-5 rounded-2xl bg-[#f7f5f1] p-4"><p className="text-sm font-medium text-[#302e29]">{plugin.billing === "OAuth" ? "Account authorization required" : "Ready to install"}</p><p className="mt-1 text-xs leading-5 text-[#858078]">{plugin.billing === "OAuth" ? "Your account will need to authorize this provider before provider data can be accessed. Keep provider credentials server-side." : "This plugin does not require a connected account to be installed."}</p></div><div className="mt-6 flex gap-3"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-[#dedbd5] px-4 py-3 text-sm font-medium text-[#4e4a43]">Cancel</button><button type="button" onClick={onInstall} className="flex-1 rounded-xl bg-[#282721] px-4 py-3 text-sm font-medium text-white">Install plugin</button></div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-0 sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="plugin-setup-title"><div className="w-full max-w-md rounded-t-[28px] bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,.16)] sm:rounded-[24px]"><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl border border-[#e8e5df] bg-white"><img src={plugin.logo} alt="" className="h-8 w-8 object-contain" /></div><div><h2 id="plugin-setup-title" className="text-lg font-semibold text-[#282721]">Set up {plugin.name}</h2><p className="mt-0.5 text-xs text-[#96918a]">{plugin.category}</p></div></div><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-[#f4f2ee] text-[#555148]" aria-label="Close setup"><X size={18} /></button></div><p className="mt-5 text-sm leading-6 text-[#77736a]">{plugin.description}</p><div className="mt-5 rounded-2xl bg-[#f7f5f1] p-4"><p className="text-sm font-medium text-[#302e29]">{plugin.billing === "OAuth" ? "Account authorization required" : "Ready to install"}</p><p className="mt-1 text-xs leading-5 text-[#858078]">{plugin.billing === "OAuth" ? "Install the plugin first. Provider authentication and account access are managed from its dedicated page." : "This plugin does not require a connected account to be installed."}</p></div><div className="mt-6 flex gap-3"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-[#dedbd5] px-4 py-3 text-sm font-medium text-[#4e4a43]">Cancel</button><button type="button" onClick={onInstall} className="flex-1 rounded-xl bg-[#282721] px-4 py-3 text-sm font-medium text-white">Install plugin</button></div></div></div>;
 }
