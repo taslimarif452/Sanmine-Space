@@ -1,4 +1,4 @@
-import { sendGmailForUser } from "@/lib/email/gmail-sender";
+import { resolveGmailConnection, sendGmailForUser } from "@/lib/email/gmail-sender";
 import type { AgentTool } from "@/lib/agent/tools/types";
 
 export const sendTestEmailTool: AgentTool = {
@@ -19,21 +19,16 @@ export const sendTestEmailTool: AgentTool = {
     if (!userId) return { status: "error", message: "Authenticated user context is missing." };
 
     try {
+      const connection = await resolveGmailConnection(userId, userEmail);
+      if (!connection) return { status: "needs_connection", connected: false, message: "Gmail is not connected for this signed-in account. Connect Gmail from Plugins before sending." };
       const message = typeof args.message === "string" && args.message.trim() ? args.message.trim().slice(0, 2000) : "Hi";
       const result = await sendGmailForUser(userId, userEmail, {
-        to: userEmail,
+        to: connection.email,
         subject: "Sanmine Space email test",
         body: message,
       });
       if (result.status === "needs_connection") return result;
-      return {
-        status: "sent",
-        connected: true,
-        to: result.from,
-        from: result.from,
-        message_id: result.id,
-        message: "Test email sent successfully to the connected Gmail address.",
-      };
+      return { status: "sent", connected: true, to: result.from, from: result.from, message_id: result.id, message: "Test email sent successfully to the connected Gmail address." };
     } catch (error) {
       console.error("send_test_email failed", error);
       return { status: "error", connected: true, message: error instanceof Error ? error.message : "Test email send failed." };
