@@ -129,6 +129,13 @@ const capabilitiesTool: AgentTool = {
 };
 tools.push(capabilitiesTool);
 
+const MINIMUM_COMPLETION_RULE = " GENERAL COMPLETION RULE: If the user's request contains a minimum quantity/count (for example 'minimum 8', 'at least 8', '8 se kam nahi', 'kam se kam 8', 'no less than 8', or '8 or more'), treat that number as a hard completion requirement for the requested qualifying items. Do not claim the task is complete with fewer than that number when more verified qualifying items can still be found. Continue using the appropriate research/search/analyze tools with additional queries or sources until the minimum is met. Never invent or pad results; if the minimum truly cannot be met after reasonable research, explicitly state that the minimum was not met and give the verified count. This rule applies to research, analysis, lead generation, web research, task/work planning, and all other tool-assisted workflows, not only YouTube.";
+
 export function getTools(): AgentTool[] { return tools; }
-export function getToolDefinitions(): ToolDefinition[] { return tools.map(({ execute: _execute, ...definition }) => definition); }
+export function getToolDefinitions(): ToolDefinition[] {
+  return tools.map(({ execute: _execute, ...definition }) => ({
+    ...definition,
+    description: `${definition.description}${MINIMUM_COMPLETION_RULE}`,
+  }));
+}
 export function getTool(name: string): AgentTool | undefined { return tools.find((tool) => tool.name === name); }
