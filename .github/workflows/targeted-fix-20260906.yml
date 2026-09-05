@@ -1,0 +1,82 @@
+name: Targeted chat and email fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply only requested fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1) Chat history: always reload the selected chat from the server when
+          # its route becomes active; do not let stale active/msg state suppress it.
+          p = Path('app/page.tsx')
+          s = p.read_text()
+          pattern = re.compile(r'  const openChat=async\(id:string\)=>\{.*?\n  useEffect\(\(\)=>\{if\(!user\)return;void loadChats\(\)\},\[user\]\);', re.S)
+          replacement = '''  const loadChat=async(id:string)=>{\n    if(!user)return;\n    setError(\"\");\n    const cache=read<Message[]>(ckey(user.uid,id));\n    if(cache)setMsgs(cache);else setMsgs([]);\n    setLoadingChat(true);\n    try{\n      const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}`,{headers:{Authorization:`Bearer ${t}`},cache:\"no-store\"});\n      if(!r.ok)throw new Error(\"Unable to load this chat.\");\n      const d=await r.json();\n      const xs=Array.isArray(d.messages)?d.messages.map((m:any)=>{const md=m.metadata&&typeof m.metadata===\"object\"?m.metadata:{};const persistedSources=Array.isArray(md.sources)?md.sources.map(cleanSource).filter(Boolean) as Source[]:[];return {id:String(m.id||\"\"),role:m.role===\"assistant\"?\"assistant\":\"user\",content:String(m.content||\"\"),metadata:md,sources:persistedSources,created_at:m.created_at}}):[];\n      setMsgs(xs);\n      write(ckey(user.uid,id),xs);\n    }catch(e){setError(e instanceof Error?e.message:\"Unable to load this chat.\")}finally{setLoadingChat(false)}\n  };\n  const openChat=async(id:string)=>{\n    if(loading||loadingChat||!user)return;\n    setActive(id);\n    if(routeChatId===id)await loadChat(id);\n    else router.push(`/chat/${id}`,{scroll:false});\n  };\n  useEffect(()=>{if(!user)return;void loadChats()},[user]);'''
+          ns, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit('chat openChat block not found')
+          ns = ns.replace('  useEffect(()=>{if(!user||!routeChatId)return;if(active===routeChatId&&msgs.length)return;void openChat(routeChatId)},[user,routeChatId]);', '  useEffect(()=>{if(!user||!routeChatId)return;void loadChat(routeChatId)},[user,routeChatId]);')
+          p.write_text(ns)
+
+          # 2) Schedule tool: resolve the actual Gmail connection (including
+          # legacy gmail/google rows) instead of requiring provider="google" only.
+          p = Path('lib/agent/tools/workspace-integrations.ts')
+          s = p.read_text()
+          s = s.replace('import { ensureProductionSchema } from "@/lib/agent/production";', 'import { ensureProductionSchema } from "@/lib/agent/production";\nimport { resolveGmailConnection } from "@/lib/email/gmail-sender";')
+          old = 'const connections=await sql`SELECT id FROM email_connections WHERE user_id=${userId} AND provider=\'google\' ORDER BY updated_at DESC LIMIT 1`;if(!connections[0])return {status:"needs_connection",message:"Connect Gmail before scheduling an email."};const subject=required(args.subject,"subject"),body=required(args.body,"body");const rows=await sql`INSERT INTO email_approvals(user_id,connection_id,recipient,subject,body,status,scheduled_at,approved_at,idempotency_key) VALUES(${userId},${connections[0].id},${to},${subject},${body},\'approved\',${scheduledAt.toISOString()},NOW(),md5(${userId}||\':\'||${to}||\':\'||${scheduledAt.toISOString()}||\':\'||${subject})) RETURNING id,recipient,subject,scheduled_at,status`;return {status:"scheduled",scheduled:true,email:rows[0]};'
+          new = 'const connection=await resolveGmailConnection(userId,String(args.user_email||""));if(!connection)return {status:"needs_connection",scheduled:false,message:"Connect Gmail before scheduling an email."};const subject=required(args.subject,"subject"),body=required(args.body,"body");const rows=await sql`INSERT INTO email_approvals(user_id,connection_id,recipient,subject,body,status,scheduled_at,approved_at,idempotency_key) VALUES(${userId},${connection.id},${to},${subject},${body},\'approved\',${scheduledAt.toISOString()},NOW(),md5(${userId}||\':\'||${to}||\':\'||${scheduledAt.toISOString()}||\':\'||${subject})) RETURNING id,recipient,subject,scheduled_at,status`;return {status:"scheduled",scheduled:true,email:rows[0]};'
+          if old not in s:
+              raise SystemExit('schedule SQL block not found')
+          p.write_text(s.replace(old,new,1))
+
+          # 3) Make the agent explicitly distinguish a real schedule success
+          # from a failed/unconnected schedule attempt.
+          p = Path('lib/agent/agent.ts')
+          s = p.read_text()
+          marker = '- IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, use send_proposal_outreach and do not stop at drafting. The tool must verify the connected Gmail account before sending.'
+          addition = marker + '\n- IMPORTANT SCHEDULING ACTION: If the user asks to schedule an email, use schedule_gmail. Never say an email was scheduled unless the tool returns status="scheduled" and scheduled=true. If it returns needs_connection or an error, report that exact failure and do not claim success.'
+          if marker not in s:
+              raise SystemExit('agent routing marker not found')
+          p.write_text(s.replace(marker,addition,1))
+
+          # 4) Schedule page: use a real skeleton until the complete response is loaded.
+          p = Path('app/schedule-email/page.tsx')
+          s = p.read_text()
+          if 'function ScheduleListSkeleton' not in s:
+              anchor = 'type ScheduledEmail={id:string;recipient:string;subject:string;body:string;scheduled_at:string;status:string;created_at?:string;sender_email?:string};'
+              skeleton = anchor + '\nfunction ScheduleListSkeleton(){return <div className="divide-y divide-[#e8e4dc]">{[0,1,2,3].map(i=><div key={i} className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:px-6"><div className="h-10 w-10 shrink-0 animate-pulse rounded-xl bg-[#e9e7e1]"/><div className="min-w-0 flex-1 space-y-2"><div className="h-4 w-2/3 animate-pulse rounded bg-[#e9e7e1]"/><div className="h-3 w-1/2 animate-pulse rounded bg-[#ebe9e3]"/><div className="h-3 w-1/3 animate-pulse rounded bg-[#ebe9e3]"/></div><div className="h-6 w-20 animate-pulse rounded-full bg-[#ebe9e1]"/></div>)}</div>}'
+              s=s.replace(anchor,skeleton,1)
+          s=s.replace('{loading?<div className="px-5 py-14 text-center text-sm text-[#8b877e]">Loading scheduled emails…</div>:', '{loading?<ScheduleListSkeleton/>:',1)
+          s=s.replace('className="rounded-lg p-2 text-[#5f5b53] hover:bg-black/5 md:hidden"', 'className="grid h-9 w-9 place-items-center rounded-xl text-[#5f5b53] hover:bg-black/5 md:hidden"',1)
+          p.write_text(s)
+
+          # 5) Keep Email Sents' mobile menu button visually consistent with the
+          # compact sidebar controls used elsewhere.
+          p = Path('app/emails/page.tsx')
+          s = p.read_text()
+          s=s.replace('className="rounded-lg p-2 text-[#5f5b53] hover:bg-black/5 md:hidden"', 'className="grid h-9 w-9 place-items-center rounded-xl text-[#5f5b53] hover:bg-black/5 md:hidden"',1)
+          p.write_text(s)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx lib/agent/tools/workspace-integrations.ts lib/agent/agent.ts app/schedule-email/page.tsx app/emails/page.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: persist chat history and schedule Gmail reliably"
+            git push origin main
+          fi
