@@ -75,7 +75,7 @@ function parseMinimumCount(value: unknown): number | undefined {
 function prepareToolArgs(tool: AgentTool, args: Record<string, unknown>): Record<string, unknown> {
   const minimum = Object.values(args).map(parseMinimumCount).find((value): value is number => value !== undefined);
   if (!minimum) return args;
-  const prepared = { ...args, minimum_required: minimum };
+  const prepared: Record<string, unknown> = { ...args, minimum_required: minimum };
   if (typeof prepared.limit === "number") prepared.limit = Math.max(prepared.limit, minimum);
   else if (tool.name === "search_web" || tool.name === "youtube_search" || tool.name === "research_leads") prepared.limit = minimum;
   return prepared;
