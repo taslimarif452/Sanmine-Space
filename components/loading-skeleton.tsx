@@ -37,6 +37,24 @@ export function PageLoadingSkeleton() {
   </div>;
 }
 
+export function EmailListSkeleton() {
+  return <div className="divide-y divide-[#e8e4dc]" aria-label="Loading sent emails" role="status">
+    {[0,1,2,3].map(i=><div key={i} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.7fr)_minmax(0,1fr)_auto] items-center gap-4 px-5 py-4 sm:px-6">
+      <div className="h-4 w-[80%] animate-pulse rounded bg-[#e9e7e1]" />
+      <div className="h-4 w-[90%] animate-pulse rounded bg-[#e9e7e1]" />
+      <div className="h-3 w-[70%] animate-pulse rounded bg-[#e9e7e1]" />
+      <div className="h-3 w-20 animate-pulse rounded bg-[#e9e7e1]" />
+    </div>)}
+  </div>;
+}
+
+export function ConnectionListSkeleton() {
+  return <div className="space-y-2" aria-label="Loading Gmail connections" role="status">
+    <div className="h-14 animate-pulse rounded-xl bg-[#e9e7e1]" />
+    <div className="h-14 animate-pulse rounded-xl bg-[#e9e7e1]" />
+  </div>;
+}
+
 export function SidebarLoadingSkeleton() {
   return <div className="mt-2 space-y-2 px-1" aria-label="Loading recent chats" role="status">
     <div className="h-8 w-full animate-pulse rounded-lg bg-[#e9e7e1]" />
