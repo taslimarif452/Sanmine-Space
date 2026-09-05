@@ -64,9 +64,9 @@ export default function Home(){
         if(!line.trim())return;
         let d:StreamPacket;
         try{d=JSON.parse(line)}catch{return}
-        if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
+        if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);window.dispatchEvent(new CustomEvent("sanmine:chat-created",{detail:{chat:n[0]}}));return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking")setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");if(e.type==="tool_start"){const [,label]=statusFor(e.name);setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");const next:Message[]=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(next);}
+        if(d.type==="delta"&&typeof d.delta==="string"&&d.delta.length){streamed+=d.delta;setStatus("Writing answer");setMsgs(prev=>{const withoutStreaming=prev.filter((m)=>!(m.role==="assistant"&&m.metadata?.kind==="streaming"));return [...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed,metadata:{kind:"streaming"}}]});}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
@@ -79,7 +79,7 @@ export default function Home(){
     finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
-  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=msgs;setMsgs([...base,{role:"user" as const,content:q}]);setText("");if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
+  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=msgs;setMsgs([...base,{role:"user" as const,content:q}]);setText("");if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);window.dispatchEvent(new CustomEvent("sanmine:chat-created",{detail:{chat:pending}}));return n});}void send(q,base,active)};
   const copyMessage=async(index:number)=>{try{await navigator.clipboard.writeText(msgs[index].content);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{}};
   void copyMessage;
   void fresh;
@@ -104,7 +104,7 @@ export default function Home(){
     <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end">
-          {loadingChat?<ChatLoadingSkeleton/>:msgs.map((m,i)=><div key={m.id||i} className="mb-5"><div className={m.role==="user"?"ml-auto max-w-[78%] rounded-2xl bg-white px-4 py-3 text-[15px] text-[#37352f]":"max-w-[90%]"}>{m.role==="assistant"?<ChatMarkdown content={m.content}/>:m.content}</div>{m.role==="assistant"&&m.sources?<SourceCards items={m.sources}/>:null}</div>)}
+          {loadingChat?<ChatLoadingSkeleton/>:msgs.map((m,i)=><div key={m.id||i} className="mb-5"><div className={m.role==="user"?"ml-auto w-fit max-w-[78%] rounded-2xl bg-[#F0F0EF] px-4 py-3 text-[15px] text-[#37352f]":"max-w-[90%]"}>{m.role==="assistant"?<ChatMarkdown content={m.content}/>:m.content}</div>{m.role==="assistant"&&m.sources?<SourceCards items={m.sources}/>:null}</div>)}
           {error?<div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>:null}
           {loading?<Progress status={status} steps={steps}/>:null}
         </div>
