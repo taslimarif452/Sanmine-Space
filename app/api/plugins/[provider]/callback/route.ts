@@ -23,8 +23,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     const cookieStore = await cookies();
     const storedState = cookieStore.get("sanmine_plugin_oauth_state")?.value;
     if (!storedState || storedState !== state) return redirect("error", "OAuth session expired. Please reconnect.");
-    const codeVerifier = rawProvider === "canva" ? cookieStore.get("sanmine_plugin_pkce")?.value : undefined;
-    if (rawProvider === "canva" && !codeVerifier) return redirect("error", "Canva authorization session expired. Please reconnect.");
+
+    let codeVerifier: string | undefined;
+    if (rawProvider === "canva") {
+      codeVerifier = cookieStore.get("sanmine_plugin_pkce")?.value;
+      if (!codeVerifier) return redirect("error", "Canva authorization session expired. Please reconnect.");
+    }
+
     await createConnection(rawProvider, stateData.uid, code, url.origin, codeVerifier);
     const response = redirect("connected");
     response.cookies.delete("sanmine_plugin_oauth_state");
