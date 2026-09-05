@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, Menu, Plus, Search, Settings, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Plus, Search, Settings, X } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { EmailConnections } from "@/components/email-connections";
@@ -133,9 +132,7 @@ export default function PluginsPage() {
           </div>
 
           <section className="mt-12 md:mt-10">
-            <h2 className="text-[25px] font-medium tracking-[-.025em] text-[#22211f] md:text-[15px] md:font-semibold md:tracking-normal">
-              Installed
-            </h2>
+            <h2 className="text-[25px] font-medium tracking-[-.025em] text-[#22211f] md:text-[15px] md:font-semibold md:tracking-normal">Installed</h2>
 
             <div className="mt-5 flex min-h-[78px] items-center gap-4 overflow-x-auto pb-1 md:mt-4 md:min-h-0">
               <div className="grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[22px] border border-[#e7e4df] bg-white shadow-[0_2px_8px_rgba(0,0,0,.035)] md:h-14 md:w-14 md:rounded-2xl">
@@ -169,11 +166,7 @@ export default function PluginsPage() {
                     <p className="mt-0.5 truncate text-[14px] leading-6 text-[#99958f] md:text-[11px] md:leading-5">{plugin.description}</p>
                   </div>
 
-                  <span
-                    className="grid h-9 w-9 shrink-0 place-items-center text-[#171614] md:h-8 md:w-8"
-                    aria-label={plugin.status}
-                    title={plugin.status}
-                  >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center text-[#171614] md:h-8 md:w-8" aria-label={plugin.status} title={plugin.status}>
                     {plugin.status === "Ready" ? <Check size={21} strokeWidth={1.8} /> : <Plus size={25} strokeWidth={1.7} />}
                   </span>
                 </article>
@@ -185,9 +178,7 @@ export default function PluginsPage() {
 
           <div className="mt-10 rounded-2xl border border-[#dfdcd5] bg-[#f5f3ed] p-5 sm:p-6">
             <div className="flex gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#e8e5dc] text-[#555148]">
-                <Settings size={18} />
-              </div>
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#e8e5dc] text-[#555148]"><Settings size={18} /></div>
               <div>
                 <h2 className="text-sm font-semibold text-[#302e29]">Payment & security</h2>
                 <p className="mt-1 text-sm leading-6 text-[#77736a]">Sanmine does not collect card details for these connections. Provider quotas and billing policies still apply independently. Sanmine never silently enables paid billing.</p>
