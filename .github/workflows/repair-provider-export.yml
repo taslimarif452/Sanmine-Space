@@ -1,51 +1,22 @@
-name: Repair provider export
+name: Provider verification
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  repair:
-    if: github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]'
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Restore provider implementation from known-good parent
-        run: |
-          git checkout 3ee17c552ef6bb02b381fbe5c8edd9d13ceafba8 -- lib/ai/provider.ts
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/ai/provider.ts
-          git commit -m "fix: restore getProvider export" || true
-          git push origin main
-      - name: Repair chat page syntax regressions
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("app/page.tsx")
-          s = p.read_text()
-          # Repair the malformed close accidentally inserted after the delta handler.
-          s = re.sub(r'\}\]\);\}\s*if\(d\.type===\"done\"\)', '}\n        if(d.type==="done")', s, count=1)
-          # The page renders the status state directly; no label() helper exists.
-          s = s.replace('{label(status)}', '{status}')
-          p.write_text(s)
-          PY
-          if ! git diff --quiet -- app/page.tsx; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add app/page.tsx
-            git commit -m "fix: repair chat status rendering"
-            git push origin main
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify
+      - name: Verify TypeScript and production build
         run: |
           npm install --no-audit --no-fund
           npm run typecheck
