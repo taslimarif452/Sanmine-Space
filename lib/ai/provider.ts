@@ -1,6 +1,6 @@
 import type { ToolCall, ToolDefinition } from "@/lib/agent/tools/types";
 
-export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+export type ChatMessage = { role: "user" | "assistant" | "system"; content: string; name?: string };
 export type AIProviderName = "gemini" | "openrouter";
 export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unknown };
 export interface AIProvider {
@@ -17,12 +17,10 @@ class ResilientProvider implements AIProvider {
   constructor(private readonly primary: AIProvider, private readonly fallback: AIProvider) {}
 
   async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<ProviderResponse> {
-    try {
-      return await this.primary.chat(messages, tools);
-    } catch (primaryError) {
-      try {
-        return await this.fallback.chat(messages, tools);
-      } catch (fallbackError) {
+    try { return await this.primary.chat(messages, tools); }
+    catch (primaryError) {
+      try { return await this.fallback.chat(messages, tools); }
+      catch (fallbackError) {
         const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
         const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
         throw new Error(`AI providers failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`);
@@ -31,12 +29,10 @@ class ResilientProvider implements AIProvider {
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
-    try {
-      return await this.primary.chatStream(messages, tools, onText);
-    } catch (primaryError) {
-      try {
-        return await this.fallback.chatStream(messages, tools, onText);
-      } catch (fallbackError) {
+    try { return await this.primary.chatStream(messages, tools, onText); }
+    catch (primaryError) {
+      try { return await this.fallback.chatStream(messages, tools, onText); }
+      catch (fallbackError) {
         const primaryMessage = primaryError instanceof Error ? primaryError.message : "Primary provider failed.";
         const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback provider failed.";
         throw new Error(`AI providers failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`);
@@ -91,8 +87,7 @@ class GeminiProvider implements AIProvider {
       body: JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}) }),
     });
     if (!response.ok) throw new Error(await readProviderError(response, `Gemini ${model}`));
-    const data = await response.json();
-    return parseGeminiResponse(data);
+    return parseGeminiResponse(await response.json());
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
@@ -135,8 +130,7 @@ class OpenRouterProvider implements AIProvider {
       body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: "auto" } : {}) }),
     });
     if (!response.ok) throw new Error(await readProviderError(response, "OpenRouter"));
-    const data = await response.json();
-    return parseOpenRouterResponse(data);
+    return parseOpenRouterResponse(await response.json());
   }
 
   async chatStream(messages: ChatMessage[], tools: ToolDefinition[] = [], onText?: (delta: string) => void): Promise<ProviderResponse> {
