@@ -22,7 +22,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     if (!code || !state) return redirect("error", "OAuth provider did not return a valid authorization response.");
 
     const stateData = verifyPluginState(state);
+    if (!stateData.uid) return redirect("error", "OAuth state is missing the authenticated user.");
     if (stateData.provider !== rawProvider) return redirect("error", "OAuth provider state mismatch.");
+    const uid = stateData.uid;
 
     const cookieStore = await cookies();
     const storedState = cookieStore.get("sanmine_plugin_oauth_state")?.value;
@@ -31,9 +33,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     if (rawProvider === "canva") {
       const codeVerifier = cookieStore.get("sanmine_plugin_pkce")?.value;
       if (!codeVerifier) return redirect("error", "Canva authorization session expired. Please reconnect.");
-      await createConnection(rawProvider, stateData.uid, code, url.origin, codeVerifier);
+      await createConnection(rawProvider, uid, code, url.origin, codeVerifier);
     } else {
-      await createConnection(rawProvider, stateData.uid, code, url.origin);
+      await createConnection(rawProvider, uid, code, url.origin);
     }
 
     const response = redirect("connected");
