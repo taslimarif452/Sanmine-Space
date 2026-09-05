@@ -58,7 +58,7 @@ export function WorkspaceSidebar({user}:{user:User}){
 
   return <>
     <div className={`fixed inset-0 z-30 bg-black/20 transition-opacity md:hidden ${mobileOpen?"opacity-100":"pointer-events-none opacity-0"}`} onClick={()=>setMobileOpen(false)}/>
-    <aside data-sanmine-workspace-sidebar className={`${mobileOpen?"flex":"hidden"} fixed inset-y-0 left-0 z-40 w-[78vw] max-w-[310px] shrink-0 flex-col overflow-hidden border-r border-[var(--line)] bg-[#f2f1ed] p-3 shadow-xl md:static md:flex md:shadow-none ${side?"md:w-[270px]":"md:w-[72px]"}`}>
+    <aside data-sanmine-workspace-sidebar className={`${mobileOpen?"flex":"hidden"} fixed inset-y-0 left-0 z-40 w-[78vw] max-w-[310px] shrink-0 flex-col overflow-hidden border-r border-[var(--line)] bg-[#f2f1ed] p-3 shadow-xl md:sticky md:top-0 md:flex md:h-screen md:max-h-screen md:shadow-none ${side?"md:w-[270px]":"md:w-[72px]"}`}>
       <div className={`flex shrink-0 items-center pb-5 ${side?"justify-between px-2":"justify-center"}`}>
         {side?<button onClick={fresh} className="flex items-center gap-2.5"><img src={LOGO} alt="Sanmine Space" className="h-7 w-7 rounded-md object-cover"/><span className="text-[15px] font-semibold">Sanmine Space</span></button>:null}
         <button onClick={()=>setSide(v=>!v)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#5f5b54] hover:bg-black/5" aria-label={side?"Collapse sidebar":"Expand sidebar"}>{side?<PanelLeftClose size={18}/>:<PanelLeftOpen size={18}/>}</button>
