@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-export function DelayedSkeleton({ children, delay = 350 }: { children: React.ReactNode; delay?: number }) {
+export function DelayedSkeleton({ children, delay = 350 }: { children: ReactNode; delay?: number }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setVisible(true), delay);
