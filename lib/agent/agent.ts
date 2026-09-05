@@ -278,13 +278,13 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
     if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; return { response: finalText, events }; }
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
-      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "tool", name: call.name, content: "This tool call was already executed by the deterministic router. Use the authoritative result already in context." }); continue; }
-      if (!sendAllowed && (call.name === "send_test_email" || call.name === "send_proposal_outreach")) { messages.push({ role: "tool", name: call.name, content: "Blocked: the user did not explicitly authorize sending an email. Treat email/contact-address mentions as research or data lookup only." }); continue; }
-      if (!tool) { messages.push({ role: "tool", name: call.name, content: `Tool ${call.name} is unavailable.` }); continue; }
+      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", name: call.name, content: "This tool call was already executed by the deterministic router. Use the authoritative result already in context." }); continue; }
+      if (!sendAllowed && (call.name === "send_test_email" || call.name === "send_proposal_outreach")) { messages.push({ role: "user", name: call.name, content: "Blocked: the user did not explicitly authorize sending an email. Treat email/contact-address mentions as research or data lookup only." }); continue; }
+      if (!tool) { messages.push({ role: "user", name: call.name, content: `Tool ${call.name} is unavailable.` }); continue; }
       const result = await tool.execute(call.arguments);
       record({ type: "tool_start", name: call.name, toolCallId: call.id });
       record({ type: "tool_result", name: call.name, toolCallId: call.id, result });
-      messages.push({ role: "tool", name: call.name, content: JSON.stringify(result) });
+      messages.push({ role: "user", name: call.name, content: JSON.stringify(result) });
     }
   }
   return { response: "I reached the tool execution limit before completing the request.", events };
