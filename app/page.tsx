@@ -87,7 +87,15 @@ export default function Home(){
   const templateMessages=["Research this topic and give me the key findings.","Help me plan and organize this task step by step.","Find the best options for what I am looking for.","Analyze this information and give me a clear summary."];
   const isNew=!active&&!msgs.length;
 
-  return <div className="flex h-full min-h-0 bg-[var(--bg)]">
+  const openMobileSidebar=()=>{window.dispatchEvent(new CustomEvent("sanmine:open-sidebar"));};
+
+  return <div className="relative flex h-full min-h-0 bg-[var(--bg)]">
+    <button type="button" onClick={openMobileSidebar} aria-label="Open sidebar" title="Open sidebar" className="absolute left-3 top-3 z-20 grid h-9 w-9 place-items-center rounded-lg bg-[var(--bg)]/90 text-[#37352f] shadow-sm backdrop-blur-sm md:hidden">
+      <span className="flex flex-col items-start gap-[5px]" aria-hidden="true">
+        <span className="block h-[2px] w-[19px] rounded-full bg-current" />
+        <span className="block h-[2px] w-[13px] rounded-full bg-current" />
+      </span>
+    </button>
     <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end">
