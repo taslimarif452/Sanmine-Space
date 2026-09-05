@@ -18,7 +18,7 @@ TOOL ROUTING — IMPORTANT:
 - For normal web research that is not specifically a YouTube request, prefer search_web for discovery, then open_page or website_analyze for source inspection.
 - When a business website is found, use website_analyze when the user asks to evaluate or research that business.
 - For proposals, pitches, statements of work, or client offers, use generate_proposal. For cold outreach, introductions, follow-ups, or sales emails, use generate_outreach_email.
-- If the user explicitly asks for a simple/test email, use send_test_email. A test email is separate from creator/prospect outreach and must not require a creator list. The test email is sent to the user's connected Gmail address.
+- If the user explicitly asks for a simple/test email, use send_test_email. If the user provides an explicit recipient email address, ALWAYS pass that address as `to` and send to that exact address. Never replace an explicit recipient with the connected Gmail account. Only use the connected Gmail account as the recipient when no recipient was provided.
 - IMPORTANT OUTREACH ACTION: If the user explicitly asks to SEND, EMAIL, or SEND THE PROPOSAL to researched prospects, do not stop at drafting. Use send_proposal_outreach. That tool MUST first verify that Gmail or another supported sending provider is connected. If no provider is connected, stop immediately and tell the user, in the same language as their request, to install/connect the email plugin from Plugins. Do not research contacts or claim anything was sent until a provider is connected.
 - If a provider is connected, send_proposal_outreach researches public business/contact emails, personalizes each proposal from the supplied research, and sends it through the connected provider. Only public business/contact emails may be used; never guess an email address. If no public business email is found, skip that prospect and report it.
 - If the user only asks to draft/write a proposal or email, do NOT send it.
@@ -116,6 +116,15 @@ function buildSendSummary(result: any, language: string) {
   return lines.join("\n");
 }
 
+function extractEmailAddress(text: string) {
+  return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || "";
+}
+
+function extractTestMessage(text: string) {
+  const match = text.match(/\b(?:tell|say)\s+(?:him|her|them)\s+(.+?)(?:\s+then\b|\s+and\s+then\b|$)/i);
+  return match?.[1]?.trim() || "This is for testing.";
+}
+
 export async function runAgent(history: ChatMessage[], userMessage: string, onEvent?: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
   const provider = getProvider();
   const tools = getToolDefinitions();
@@ -139,10 +148,19 @@ export async function runAgent(history: ChatMessage[], userMessage: string, onEv
   if (isTestEmailRequest(userMessage) && userId) {
     const testTool = getTool("send_test_email");
     if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
+    const explicitRecipient = extractEmailAddress(userMessage);
+    const testMessage = extractTestMessage(userMessage);
     emit({ type: "tool_start", name: "send_test_email", toolCallId: "forced-test-email" });
     let result: unknown;
-    try { result = await testTool.execute({ user_id: userId, user_email: userEmail, message: "Hi" }); }
-    catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." }; }
+    try {
+      result = await testTool.execute({
+        user_id: userId,
+        user_email: userEmail,
+        to: explicitRecipient || undefined,
+        subject: "Sanmine Space email test",
+        message: testMessage,
+      });
+    } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Test email sending failed." }; }
     emit({ type: "tool_result", name: "send_test_email", toolCallId: "forced-test-email", result });
     const language = detectLanguage(userMessage);
     const response = result && typeof result === "object" && (result as any).status === "sent" ? (language === "hi" ? `Test email successfully send ho gaya **${(result as any).to}** par.` : `Test email was successfully sent to **${(result as any).to}**.`) : String((result as any)?.message || "Test email send nahi ho paya.");
