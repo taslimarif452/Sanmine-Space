@@ -1,6 +1,6 @@
 import type { ToolCall, ToolDefinition } from "@/lib/agent/tools/types";
 
-export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+export type ChatMessage = { role: "user" | "assistant" | "system"; content: string; name?: string };
 export type AIProviderName = "gemini" | "openrouter";
 export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unknown };
 export interface AIProvider {
@@ -178,5 +178,5 @@ function parseOpenRouterResponse(data: any): ProviderResponse {
 
 function safeJson(value?: string): Record<string, unknown> {
   if (!value) return {};
-  try { const parsed = JSON.parse(value); return parsed && typeof parsed === "object" ? parsed : {}; } catch { return {}; }
+  try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; }
 }
