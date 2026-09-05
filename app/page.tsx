@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Copy, Loader2, LogOut, Menu, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plug, RefreshCw, Send, Square, SquarePen, Trash2, UserCircle, X } from "lucide-react";
+import { ArrowUp, Copy, Loader2, Square } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
-import { EmailConnections } from "@/components/email-connections";
 import { ChatMarkdown } from "@/components/chat-markdown";
-import { ChatLoadingSkeleton, DelayedSkeleton } from "@/components/loading-skeleton";
-import { signOutCurrentUser } from "@/lib/auth/firebase-client";
+import { ChatLoadingSkeleton } from "@/components/loading-skeleton";
 
 type Source={title:string;url:string;snippet?:string;domain?:string};
 type Metadata={kind?:string;mode?:string;durationMs?:number;eventCount?:number;toolCount?:number;sources?:unknown[]};
@@ -16,7 +14,6 @@ type Chat={id:string;title:string;created_at:string;updated_at:string};
 type Event={type?:string;name?:string;toolCallId?:string;result?:unknown};
 type StreamPacket={type?:string;event?:Event;delta?:string;response?:string;events?:Event[];chatId?:string|null;metadata?:Metadata;error?:string};
 
-const LOGO="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
 const CACHE="v5";
 const rkey=(u:string)=>`sanmine:${CACHE}:recent:${u}`;
 const ckey=(u:string,c:string)=>`sanmine:${CACHE}:chat:${u}:${c}`;
@@ -26,10 +23,9 @@ function favicon(domain:string){return `https://www.google.com/s2/favicons?domai
 function cleanSource(x:any):Source|null{try{const u=new URL(String(x?.url||""));if(!/^https?:$/.test(u.protocol))return null;return {title:String(x?.title||"Web source").slice(0,180),url:u.toString(),domain:u.hostname.replace(/^www\./,""),snippet:x?.snippet?String(x.snippet).replace(/\s+/g," ").slice(0,240):undefined}}catch{return null}}
 function collectSources(events:Event[]){const map=new Map<string,Source>();for(const e of events||[]){if(e.type!=="tool_result"||!e.result||typeof e.result!=="object")continue;const r=e.result as any;if(Array.isArray(r.results))for(const item of r.results){const s=cleanSource(item);if(s)map.set(s.url,s)}const s=cleanSource(r);if(s)map.set(s.url,s)}return [...map.values()].slice(0,12)}
 function statusFor(name?:string){if(name==="search_web")return ["searching","Searching the web"];if(name==="open_page")return ["opening","Opening source"];if(name==="website_analyze")return ["analyzing","Analyzing website"];if(name?.includes("youtube"))return ["youtube","Searching YouTube"];if(name==="generate_proposal")return ["proposal","Generating proposal"];if(name==="generate_outreach_email")return ["email","Writing email"];if(name==="send_proposal_outreach")return ["sending","Preparing outreach"];return ["researching","Working on it"]}
-function Avatar({user}:{user:{photoURL?:string|null}}){return user.photoURL?<img src={user.photoURL} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover"/>:<div className="grid h-8 w-8 place-items-center rounded-full bg-[#e4e1d9]"><UserCircle size={19}/></div>}
 function SourceCards({items}:{items:Source[]}){if(!items.length)return null;return <div className="mt-5"><div className="mb-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#969188]">Sources</div><div className="grid gap-2 sm:grid-cols-2">{items.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="group flex min-w-0 items-center gap-2 px-0 py-1 transition"><img src={favicon(s.domain||new URL(s.url).hostname)} alt="" className="h-5 w-5 shrink-0 rounded-sm"/><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-[#37352f]">{s.title}</span><span className="block truncate text-[11px] text-[#98948b]">{s.domain}</span></span></a>)}</div></div>}
 function Progress({status,steps}:{status:string;steps:string[]}){if(!status&&!steps.length)return null;return <span className="mb-3 inline-flex items-center gap-2 text-[13px] text-[#77736b]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"/>{status||steps.at(-1)||"Thinking"}<Loader2 size={13} className="animate-spin"/></span>}
-function Composer({value,setValue,onSubmit,onStop,loading}:{value:string;setValue:(v:string)=>void;onSubmit:()=>void;onStop:()=>void;loading:boolean}){const ref=useRef<HTMLTextAreaElement>(null);useEffect(()=>{const el=ref.current;if(!el)return;el.style.height="auto";el.style.height=`${Math.min(el.scrollHeight,190)}px`},[value]);return <div className="relative rounded-[22px] border border-[#dcd9d1] bg-[#fbfaf7] p-2 shadow-sm"><textarea ref={ref} value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(loading)onStop();else onSubmit()}}} placeholder="Message Sanmine Space..." rows={1} disabled={loading} className="min-h-[48px] max-h-[190px] w-full resize-none overflow-auto border-0 bg-transparent px-3 py-2.5 pr-12 text-[15px] leading-6 outline-none disabled:opacity-70"/><button aria-label={loading?"Stop generating":"Send message"} onClick={loading?onStop:onSubmit} disabled={!loading&&!value.trim()} className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-[#282721] text-white transition disabled:opacity-30">{loading?<Square size={14} fill="currentColor"/>:<ArrowUp size={17}/>}</button></div>}
+function Composer({value,setValue,onSubmit,onStop,loading}:{value:string;setValue:(v:string)=>void;onSubmit:()=>void;onStop:()=>void;loading:boolean}){const ref=useRef<HTMLTextAreaElement>(null);useEffect(()=>{const el=ref.current;if(!el)return;el.style.height="auto";el.style.height=`${Math.min(el.scrollHeight,190)}px`},[value]);return <div className="relative rounded-[22px] border border-[#dcd9d1] bg-[#FFFFFF] p-2 shadow-sm"><textarea ref={ref} value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(loading)onStop();else onSubmit()}}} placeholder="Message Sanmine Space..." rows={1} disabled={loading} className="min-h-[48px] max-h-[190px] w-full resize-none overflow-auto border-0 bg-transparent px-3 py-2.5 pr-12 text-[15px] leading-6 outline-none disabled:opacity-70"/><button aria-label={loading?"Stop generating":"Send message"} onClick={loading?onStop:onSubmit} disabled={!loading&&!value.trim()} className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-[#282721] text-white transition disabled:opacity-30">{loading?<Square size={14} fill="currentColor"/>:<ArrowUp size={17}/>}</button></div>}
 
 export default function Home(){
   const user=useAuthUser();
@@ -37,57 +33,60 @@ export default function Home(){
   const params=useParams<{id?:string}>();
   const routeChatId=typeof params?.id==="string"?params.id:null;
   const [text,setText]=useState(""); const [msgs,setMsgs]=useState<Message[]>([]); const [chats,setChats]=useState<Chat[]>([]); const [active,setActive]=useState<string|null>(routeChatId);
-  const [side,setSide]=useState(true); const [mobileOpen,setMobileOpen]=useState(false); const [loading,setLoading]=useState(false); const [loadingChat,setLoadingChat]=useState(false);
-  const [status,setStatus]=useState(""); const [steps,setSteps]=useState<string[]>([]); const [error,setError]=useState(""); const [menu,setMenu]=useState<string|null>(null); const [editingIndex,setEditingIndex]=useState<number|null>(null); const [profile,setProfile]=useState(false); const [showScroll,setShowScroll]=useState(false);
+  const [loading,setLoading]=useState(false); const [loadingChat,setLoadingChat]=useState(false);
+  const [status,setStatus]=useState(""); const [steps,setSteps]=useState<string[]>([]); const [error,setError]=useState("");
   const scrollRef=useRef<HTMLDivElement>(null); const followRef=useRef(true); const abortRef=useRef<AbortController|null>(null);
   const [copied,setCopied]=useState<number|null>(null);
 
-  const scrollLatest=(behavior:ScrollBehavior="smooth")=>{const el=scrollRef.current;if(!el)return;el.scrollTo({top:el.scrollHeight,behavior});followRef.current=true;setShowScroll(false)};
-  const onScroll=()=>{const el=scrollRef.current;if(!el)return;const d=el.scrollHeight-el.scrollTop-el.clientHeight;const near=d<140;followRef.current=near;setShowScroll(!near&&el.scrollHeight>el.clientHeight+24)};
+  const scrollLatest=(behavior:ScrollBehavior="smooth")=>{const el=scrollRef.current;if(!el)return;el.scrollTo({top:el.scrollHeight,behavior});followRef.current=true};
+  const onScroll=()=>{const el=scrollRef.current;if(!el)return;const d=el.scrollHeight-el.scrollTop-el.clientHeight;followRef.current=d<140};
   const loadChats=async(bg=false)=>{if(!user)return;const cache=read<Chat[]>(rkey(user.uid));if(cache&&!bg)setChats(cache);try{const t=await user.getIdToken(),r=await fetch("/api/chats",{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});if(!r.ok)return;const d=await r.json();const xs=Array.isArray(d.chats)?d.chats:[];setChats(xs);write(rkey(user.uid),xs)}catch{}};
-  const openChat=async(id:string)=>{if(loading||loadingChat||!user)return;setMenu(null);setActive(id);router.push(`/chat/${id}`,{scroll:false});setMobileOpen(false);setError("");const cache=read<Message[]>(ckey(user.uid,id));if(cache)setMsgs(cache);else setMsgs([]);setLoadingChat(!cache);try{const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}`,{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});if(!r.ok)throw new Error("Unable to load this chat.");const d=await r.json();const xs=Array.isArray(d.messages)?d.messages.map((m:any)=>{const md=m.metadata&&typeof m.metadata==="object"?m.metadata:{};const persistedSources=Array.isArray(md.sources)?md.sources.map(cleanSource).filter(Boolean) as Source[]:[];return {id:String(m.id||""),role:m.role==="assistant"?"assistant":"user",content:String(m.content||""),metadata:md,sources:persistedSources}}):[];setMsgs(xs);write(ckey(user.uid,id),xs)}catch(e){setError(e instanceof Error?e.message:"Unable to load this chat.")}finally{setLoadingChat(false)}};
+  const openChat=async(id:string)=>{if(loading||loadingChat||!user)return;setActive(id);router.push(`/chat/${id}`,{scroll:false});setError("");const cache=read<Message[]>(ckey(user.uid,id));if(cache)setMsgs(cache);else setMsgs([]);setLoadingChat(!cache);try{const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}`,{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});if(!r.ok)throw new Error("Unable to load this chat.");const d=await r.json();const xs=Array.isArray(d.messages)?d.messages.map((m:any)=>{const md=m.metadata&&typeof m.metadata==="object"?m.metadata:{};const persistedSources=Array.isArray(md.sources)?md.sources.map(cleanSource).filter(Boolean) as Source[]:[];return {id:String(m.id||""),role:m.role==="assistant"?"assistant":"user",content:String(m.content||""),metadata:md,sources:persistedSources}}):[];setMsgs(xs);write(ckey(user.uid,id),xs)}catch(e){setError(e instanceof Error?e.message:"Unable to load this chat.")}finally{setLoadingChat(false)}};
   useEffect(()=>{if(!user)return;void loadChats()},[user]);
   useEffect(()=>{if(!user||!routeChatId)return;if(active===routeChatId&&msgs.length)return;void openChat(routeChatId)},[user,routeChatId]);
   useEffect(()=>{if(msgs.length&&active)requestAnimationFrame(()=>scrollLatest("auto"))},[active]);
   useEffect(()=>{if(followRef.current)requestAnimationFrame(()=>scrollLatest("auto"))},[msgs,loading,status]);
 
-  const fresh=()=>{if(loading)abortRef.current?.abort();router.push("/",{scroll:false});setActive(null);setMsgs([]);setText("");setError("");setStatus("");setSteps([]);setEditingIndex(null);setMenu(null);setMobileOpen(false);followRef.current=true;setShowScroll(false)};
+  const fresh=()=>{if(loading)abortRef.current?.abort();router.push("/",{scroll:false});setActive(null);setMsgs([]);setText("");setError("");setStatus("");setSteps([]);followRef.current=true};
   const stop=()=>{abortRef.current?.abort();setStatus("Stopping");};
 
   const send=async(q:string,base:Message[],chatId:string|null)=>{
     if(!user||!q.trim())return;
     setLoading(true);setStatus("Thinking");setSteps([]);setError("");followRef.current=true;requestAnimationFrame(()=>scrollLatest("smooth"));
-    const controller=new AbortController();abortRef.current=controller;let answer="",streamed="",displayed="",events:Event[]=[],id=chatId;
+    const controller=new AbortController();abortRef.current=controller;let answer="",streamed="",events:Event[]=[],id=chatId;
     try{
       const token=await user.getIdToken();
       const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({message:q,history:base.map(m=>({role:m.role,content:m.content})),chatId}),signal:controller.signal});
       if(!r.ok){const raw=await r.text();let msg=`Chat request failed (${r.status}).`;try{msg=JSON.parse(raw).error||msg}catch{}throw new Error(msg)}
       const reader=r.body?.getReader();if(!reader)throw new Error("No response stream.");const decoder=new TextDecoder();let buffer="";
-      const consume=(line:string)=>{if(!line.trim())return;let d:StreamPacket;try{d=JSON.parse(line)}catch{return}
+      const consume=(line:string)=>{
+        if(!line.trim())return;
+        let d:StreamPacket;
+        try{d=JSON.parse(line)}catch{return}
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
-        if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking"){setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");}if(e.type==="tool_start"){const [key,label]=statusFor(e.name);void key;setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&d.delta){streamed+=d.delta;displayed=streamed;setStatus("Writing answer");setMsgs([...base,{role:"user",content:q},{role:"assistant",content:displayed}
+        if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking")setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");if(e.type==="tool_start"){const [,label]=statusFor(e.name);setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
+        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");setMsgs([...base,{role:"user",content:q},{role:"assistant",content:streamed}]);}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
-      while(true){const x=await reader.read();if(x.done)break;buffer+=decoder.decode(x.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines)consume(line)}buffer+=decoder.decode();if(buffer.trim())consume(buffer);
-      displayed=streamed;if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
+      while(true){const x=await reader.read();if(x.done)break;buffer+=decoder.decode(x.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines)consume(line)}
+      buffer+=decoder.decode();if(buffer.trim())consume(buffer);
+      if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
       const src=collectSources(events);const metadata:Metadata={kind:"chat_response",durationMs:0,eventCount:events.length,toolCount:events.filter(e=>e.type==="tool_start").length,sources:src};
       const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);void loadChats(true);
     }catch(e){if((e as Error)?.name==="AbortError"){setError("Generation stopped.");if(streamed){const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
     finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
-  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
-  const regenerate=(index:number)=>{if(loading)return;const userIndex=[...msgs.slice(0,index)].map((m,i)=>({m,i})).filter(x=>x.m.role==="user").pop()?.i;if(userIndex===undefined)return;const q=msgs[userIndex].content;const base=msgs.slice(0,userIndex);setMsgs(base);void send(q,base,active)};
-  const editMessage=(index:number)=>{const m=msgs[index];if(m.role!=="user"||loading)return;setText(m.content);setEditingIndex(index);requestAnimationFrame(()=>scrollLatest("smooth"))};
+  const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=msgs;setMsgs([...base,{role:"user",content:q}]);setText("");if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
   const copyMessage=async(index:number)=>{try{await navigator.clipboard.writeText(msgs[index].content);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{}};
-  const remove=async(id:string)=>{if(!user||!window.confirm("Delete this chat?"))return;try{const t=await user.getIdToken(),r=await fetch(`/api/chats/${id}/manage`,{method:"DELETE",headers:{Authorization:`Bearer ${t}`}});if(!r.ok)throw new Error("Unable to delete chat.");setChats(xs=>xs.filter(c=>c.id!==id));write(rkey(user.uid),(read<Chat[]>(rkey(user.uid))||[]).filter(c=>c.id!==id));if(active===id)fresh()}catch(e){setError(e instanceof Error?e.message:"Unable to delete chat.")}setMenu(null)};
+  void copyMessage;
+  void fresh;
 
   const templateMessages=["Research this topic and give me the key findings.","Help me plan and organize this task step by step.","Find the best options for what I am looking for.","Analyze this information and give me a clear summary."];
   const isNew=!active&&!msgs.length;
 
-  return <div className="flex h-full min-h-0 bg-[var(--bg)]">{/* UI below remains unchanged */}
+  return <div className="flex h-full min-h-0 bg-[var(--bg)]">
     <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end">
