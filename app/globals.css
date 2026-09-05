@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
 @import "tailwindcss";
-:root{--bg:#f7f6f2;--panel:#fbfaf7;--text:#24231f;--muted:#77746d;--line:#e6e3dc;--accent:#d97757}
+:root{--bg:#FCFCFB;--panel:#FBFBF9;--text:#24231f;--muted:#77746d;--line:#e6e3dc;--accent:#d97757}
 *{box-sizing:border-box}html,body{width:100%;min-height:100%;margin:0;background:var(--bg)}html{overflow-x:hidden}body{color:var(--text);font-family:"DM Sans",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
 button,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:default}::selection{background:#ead8cf;color:#24231f}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#d7d3ca;border-radius:999px}::-webkit-scrollbar-thumb:hover{background:#c5c0b5}
@@ -24,3 +24,6 @@ main.relative.flex.h-screen.min-h-0.overflow-hidden>span.pointer-events-none.fix
 /* Plugin and Campaign pages are wrapped by AuthGate's single shared WorkspaceSidebar. Hide only the page-local duplicate. */
 .sanmine-workspace-shell main>aside,.sanmine-workspace-shell main aside{display:none!important}
 .sanmine-workspace-shell main>section{width:100%;min-width:0}
+/* Keep the workspace surfaces on the same warm off-white canvas. */
+.sanmine-workspace-shell{background:var(--bg)!important}
+.sanmine-workspace-shell main,.sanmine-workspace-shell main>section{background:var(--bg)!important}
