@@ -13,6 +13,7 @@ const PREFIX = "sanmine:api-cache:v1:";
 const MAX_AGE = 5 * 60 * 1000;
 const MAX_STALE = 24 * 60 * 60 * 1000;
 const MAX_BYTES = 900_000;
+const CACHE_USER_HEADER = "x-sanmine-cache-user";
 
 const CACHEABLE = [
   /^\/api\/chats(?:\/[^/?]+)?(?:\?.*)?$/,
@@ -35,17 +36,18 @@ const isCacheable = (url: string) => {
     return false;
   }
 };
-const keyFor = (url: string) => `${PREFIX}${url}`;
 
-function read(url: string): CacheEntry | null {
-  if (!isBrowser()) return null;
+const keyFor = (url: string, userId: string) => `${PREFIX}${encodeURIComponent(userId)}:${url}`;
+
+function read(url: string, userId: string): CacheEntry | null {
+  if (!isBrowser() || !userId) return null;
   try {
-    const raw = window.localStorage.getItem(keyFor(url));
+    const raw = window.localStorage.getItem(keyFor(url, userId));
     if (!raw) return null;
     const entry = JSON.parse(raw) as CacheEntry;
     if (!entry?.body || !entry.savedAt) return null;
     if (Date.now() - entry.savedAt > MAX_STALE) {
-      window.localStorage.removeItem(keyFor(url));
+      window.localStorage.removeItem(keyFor(url, userId));
       return null;
     }
     return entry;
@@ -54,8 +56,8 @@ function read(url: string): CacheEntry | null {
   }
 }
 
-function save(url: string, response: Response, body: string) {
-  if (!isBrowser() || body.length > MAX_BYTES || !response.ok) return;
+function save(url: string, userId: string, response: Response, body: string) {
+  if (!isBrowser() || !userId || body.length > MAX_BYTES || !response.ok) return;
   try {
     const entry: CacheEntry = {
       url,
@@ -65,7 +67,7 @@ function save(url: string, response: Response, body: string) {
       body,
       savedAt: Date.now(),
     };
-    window.localStorage.setItem(keyFor(url), JSON.stringify(entry));
+    window.localStorage.setItem(keyFor(url, userId), JSON.stringify(entry));
     window.dispatchEvent(new CustomEvent("sanmine:api-cache-updated", { detail: { url } }));
   } catch {}
 }
@@ -81,51 +83,55 @@ async function revalidate(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   url: string,
+  userId: string,
 ) {
-  if (revalidating.has(url)) return;
-  revalidating.add(url);
+  const lock = `${userId}:${url}`;
+  if (revalidating.has(lock)) return;
+  revalidating.add(lock);
   try {
     const response = await originalFetch(input, { ...init, cache: "no-store" });
-    if (response.ok) save(url, response.clone(), await response.text());
+    if (response.ok) save(url, userId, response.clone(), await response.text());
   } catch {
   } finally {
-    revalidating.delete(url);
+    revalidating.delete(lock);
   }
 }
 
 export async function cachedApiFetch(
   originalFetch: typeof window.fetch,
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init: RequestInit | undefined,
+  userId: string,
 ): Promise<Response> {
   const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
   if (method !== "GET") return originalFetch(input, init);
 
   const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-  if (!isCacheable(rawUrl)) return originalFetch(input, init);
+  if (!isCacheable(rawUrl) || !userId) return originalFetch(input, init);
 
   const url = new URL(rawUrl, window.location.origin).toString();
-  const entry = read(url);
+  const entry = read(url, userId);
   if (entry) {
-    void revalidate(originalFetch, input, init, url);
+    void revalidate(originalFetch, input, init, url, userId);
     return responseFromCache(entry);
   }
 
   const response = await originalFetch(input, init);
   if (response.ok) {
     const clone = response.clone();
-    void clone.text().then((body) => save(url, response, body));
+    void clone.text().then((body) => save(url, userId, response, body));
   }
   return response;
 }
 
-export function clearApiCache() {
+export function clearApiCache(userId?: string) {
   if (!isBrowser()) return;
   try {
+    const prefix = userId ? `${PREFIX}${encodeURIComponent(userId)}:` : PREFIX;
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key?.startsWith(PREFIX)) keys.push(key);
+      if (key?.startsWith(prefix)) keys.push(key);
     }
     keys.forEach((key) => localStorage.removeItem(key));
   } catch {}
