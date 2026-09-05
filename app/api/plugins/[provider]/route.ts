@@ -10,17 +10,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     const origin = new URL(request.url).origin;
     const state = createPluginState(user.uid, rawProvider);
     let url: string;
-    const response = NextResponse.json({ url: "" });
+    const responseData = { url: "" };
     if (rawProvider === "canva") {
       const pair = await pkcePair();
       url = authorizationUrl(rawProvider, state, origin, pair.challenge);
+      const response = NextResponse.json({ url });
       response.cookies.set("sanmine_plugin_pkce", pair.verifier, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/api/plugins/canva/callback" });
-    } else {
-      url = authorizationUrl(rawProvider, state, origin);
+      response.cookies.set("sanmine_plugin_oauth_state", state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/api/plugins" });
+      return response;
     }
+    url = authorizationUrl(rawProvider, state, origin);
+    responseData.url = url;
+    const response = NextResponse.json(responseData);
     response.cookies.set("sanmine_plugin_oauth_state", state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/api/plugins" });
-    response.headers.set("content-type", "application/json");
-    return new Response(JSON.stringify({ url }), { status: 200, headers: response.headers });
+    return response;
   } catch (error) {
     console.error("Plugin OAuth start failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start plugin authentication." }, { status: 500 });
