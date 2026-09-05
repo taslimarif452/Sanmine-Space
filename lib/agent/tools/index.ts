@@ -56,6 +56,31 @@ function sanitizeValue(value: unknown, depth = 0): unknown {
   return out;
 }
 
+function parseMinimumCount(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.toLowerCase();
+  const patterns = [
+    /\b(?:minimum|min|at\s+least|no\s+less\s+than|not\s+less\s+than)\s+(?:of\s+)?(\d+)\b/i,
+    /\b(?:kam\s+se\s+kam|कम\s+से\s+कम)\s*(\d+)\b/i,
+    /\b(\d+)\s*(?:se\s+kam\s+n(?:a|ahi|ahin)|se\s+kam\s+nahi|or\s+more|ya\s+(?:zyada|adhik))\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const count = match ? Number(match[1]) : 0;
+    if (Number.isInteger(count) && count > 0 && count <= 1000) return count;
+  }
+  return undefined;
+}
+
+function prepareToolArgs(tool: AgentTool, args: Record<string, unknown>): Record<string, unknown> {
+  const minimum = Object.values(args).map(parseMinimumCount).find((value): value is number => value !== undefined);
+  if (!minimum) return args;
+  const prepared = { ...args, minimum_required: minimum };
+  if (typeof prepared.limit === "number") prepared.limit = Math.max(prepared.limit, minimum);
+  else if (tool.name === "search_web" || tool.name === "youtube_search" || tool.name === "research_leads") prepared.limit = minimum;
+  return prepared;
+}
+
 function normalizeToolResult(name: string, result: unknown): Record<string, unknown> {
   if (result instanceof Error) return { status: "error", tool: name, message: result.message.slice(0, 500) };
   const clean = sanitizeValue(result) as Record<string, unknown>;
@@ -74,11 +99,12 @@ function normalizeToolResult(name: string, result: unknown): Record<string, unkn
 async function executeWithBudget(tool: AgentTool, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const timeoutMs = tool.name === "youtube_search" ? 120_000 : tool.name === "search_web" ? 30_000 : tool.name === "open_page" ? 20_000 : 30_000;
   const attempts = tool.name === "send_proposal_outreach" || tool.name === "send_test_email" ? 1 : 2;
+  const preparedArgs = prepareToolArgs(tool, args);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const result = await Promise.race([
-        tool.execute(args),
+        tool.execute(preparedArgs),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${tool.name} timed out after ${Math.ceil(timeoutMs / 1000)}s.`)), timeoutMs)),
       ]);
       return normalizeToolResult(tool.name, result);
