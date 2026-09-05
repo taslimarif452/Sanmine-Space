@@ -59,32 +59,29 @@ function sanitizeValue(value: unknown, depth = 0): unknown {
 function normalizeToolResult(name: string, result: unknown): Record<string, unknown> {
   if (result instanceof Error) return { status: "error", tool: name, message: result.message.slice(0, 500) };
   const clean = sanitizeValue(result) as Record<string, unknown>;
-  if (!clean || typeof clean !== "object" || Array.isArray(clean)) {
-    return { status: "success", tool: name, data: clean };
-  }
+  if (!clean || typeof clean !== "object" || Array.isArray(clean)) return { status: "success", tool: name, data: clean };
   const results = Array.isArray(clean.results) ? clean.results : undefined;
   if (results) {
     clean.results = results.map((item) => {
       if (!item || typeof item !== "object") return item;
       const row = item as Record<string, unknown>;
-      return {
-        ...row,
-        ...(validateSourceUrl(row.url) ? { url: row.url } : { url: undefined }),
-      };
+      return { ...row, ...(validateSourceUrl(row.url) ? { url: row.url } : { url: undefined }) };
     });
   }
   return { ...clean, tool: name };
 }
 
 async function executeWithBudget(tool: AgentTool, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const timeoutMs = tool.name === "search_web" ? 20000 : tool.name === "open_page" ? 15000 : 30000;
+  // Research tools can legitimately need more time than lightweight tools.
+  // Keep send actions bounded, but do not abort a real YouTube research run after 30s.
+  const timeoutMs = tool.name === "youtube_search" ? 120_000 : tool.name === "search_web" ? 30_000 : tool.name === "open_page" ? 20_000 : 30_000;
   const attempts = tool.name === "send_proposal_outreach" || tool.name === "send_test_email" ? 1 : 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const result = await Promise.race([
         tool.execute(args),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${tool.name} timed out after ${timeoutMs}ms.`)), timeoutMs)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${tool.name} timed out after ${Math.ceil(timeoutMs / 1000)}s.`)), timeoutMs)),
       ]);
       return normalizeToolResult(tool.name, result);
     } catch (error) {
@@ -99,10 +96,7 @@ async function executeWithBudget(tool: AgentTool, args: Record<string, unknown>)
   });
 }
 
-const tools: AgentTool[] = rawTools.map((tool) => ({
-  ...tool,
-  execute: (args) => executeWithBudget(tool, args),
-}));
+const tools: AgentTool[] = rawTools.map((tool) => ({ ...tool, execute: (args) => executeWithBudget(tool, args) }));
 
 const toolTestTool: AgentTool = {
   name: "agent_tool_test",
