@@ -14,8 +14,6 @@ const MAX_AGE = 5 * 60 * 1000;
 const MAX_STALE = 24 * 60 * 60 * 1000;
 const MAX_BYTES = 900_000;
 
-// Only cache read-only, user-scoped application data. Never cache auth, tokens,
-// billing, mutations, or arbitrary API responses by default.
 const CACHEABLE = [
   /^\/api\/chats(?:\/[^/?]+)?(?:\?.*)?$/,
   /^\/api\/emails(?:\/[^/?]+)?(?:\?.*)?$/,
@@ -37,7 +35,6 @@ const isCacheable = (url: string) => {
     return false;
   }
 };
-
 const keyFor = (url: string) => `${PREFIX}${url}`;
 
 function read(url: string): CacheEntry | null {
@@ -70,29 +67,27 @@ function save(url: string, response: Response, body: string) {
     };
     window.localStorage.setItem(keyFor(url), JSON.stringify(entry));
     window.dispatchEvent(new CustomEvent("sanmine:api-cache-updated", { detail: { url } }));
-  } catch {
-    // Quota/private-mode failures must never break the real request.
-  }
+  } catch {}
 }
 
 function responseFromCache(entry: CacheEntry) {
-  return new Response(entry.body, {
-    status: entry.status,
-    statusText: entry.statusText,
-    headers: entry.headers,
-  });
+  return new Response(entry.body, { status: entry.status, statusText: entry.statusText, headers: entry.headers });
 }
 
-let revalidating = new Set<string>();
+const revalidating = new Set<string>();
 
-async function revalidate(input: RequestInfo | URL, init: RequestInit | undefined, url: string) {
+async function revalidate(
+  originalFetch: typeof window.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  url: string,
+) {
   if (revalidating.has(url)) return;
   revalidating.add(url);
   try {
-    const response = await window.fetch(input, { ...init, cache: "no-store" });
+    const response = await originalFetch(input, { ...init, cache: "no-store" });
     if (response.ok) save(url, response.clone(), await response.text());
   } catch {
-    // Stale cache remains usable while the network is unavailable.
   } finally {
     revalidating.delete(url);
   }
@@ -112,17 +107,15 @@ export async function cachedApiFetch(
   const url = new URL(rawUrl, window.location.origin).toString();
   const entry = read(url);
   if (entry) {
-    const age = Date.now() - entry.savedAt;
-    if (age > MAX_AGE) void revalidate(input, init, url);
-    else {
-      // Keep the cache warm without delaying the caller.
-      void revalidate(input, init, url);
-    }
+    void revalidate(originalFetch, input, init, url);
     return responseFromCache(entry);
   }
 
   const response = await originalFetch(input, init);
-  if (response.ok) save(url, response.clone(), await response.clone().text());
+  if (response.ok) {
+    const clone = response.clone();
+    void clone.text().then((body) => save(url, response, body));
+  }
   return response;
 }
 
