@@ -11,26 +11,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     if (message) target.searchParams.set("message", message.slice(0, 180));
     return NextResponse.redirect(target);
   };
+
   try {
     if (!isPluginProvider(rawProvider)) return redirect("error", "Unsupported plugin provider.");
     const error = url.searchParams.get("error");
     if (error) return redirect("error", url.searchParams.get("error_description") || error);
+
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     if (!code || !state) return redirect("error", "OAuth provider did not return a valid authorization response.");
+
     const stateData = verifyPluginState(state);
     if (stateData.provider !== rawProvider) return redirect("error", "OAuth provider state mismatch.");
+
     const cookieStore = await cookies();
     const storedState = cookieStore.get("sanmine_plugin_oauth_state")?.value;
     if (!storedState || storedState !== state) return redirect("error", "OAuth session expired. Please reconnect.");
 
-    let codeVerifier: string | undefined;
     if (rawProvider === "canva") {
-      codeVerifier = cookieStore.get("sanmine_plugin_pkce")?.value;
+      const codeVerifier = cookieStore.get("sanmine_plugin_pkce")?.value;
       if (!codeVerifier) return redirect("error", "Canva authorization session expired. Please reconnect.");
+      await createConnection(rawProvider, stateData.uid, code, url.origin, codeVerifier);
+    } else {
+      await createConnection(rawProvider, stateData.uid, code, url.origin);
     }
 
-    await createConnection(rawProvider, stateData.uid, code, url.origin, codeVerifier);
     const response = redirect("connected");
     response.cookies.delete("sanmine_plugin_oauth_state");
     response.cookies.delete("sanmine_plugin_pkce");
