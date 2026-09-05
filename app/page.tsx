@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowUp, Copy, Loader2, Square } from "lucide-react";
+import { ArrowUp, Copy, Loader2, Square, SquarePen } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatLoadingSkeleton } from "@/components/loading-skeleton";
@@ -66,7 +66,7 @@ export default function Home(){
         try{d=JSON.parse(line)}catch{return}
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking")setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");if(e.type==="tool_start"){const [,label]=statusFor(e.name);setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");const next:Message[]=[...base,{role:"user",content:q},{role:"assistant",content:streamed}];setMsgs(next);}
+        if(d.type==="delta"&&d.delta){streamed+=d.delta;setStatus("Writing answer");const next:Message[]=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(next);}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
@@ -90,12 +90,17 @@ export default function Home(){
   const openMobileSidebar=()=>{window.dispatchEvent(new CustomEvent("sanmine:open-sidebar"));};
 
   return <div className="relative flex h-full min-h-0 bg-[var(--bg)]">
-    <button type="button" onClick={openMobileSidebar} aria-label="Open sidebar" title="Open sidebar" className="absolute left-3 top-3 z-20 grid h-9 w-9 place-items-center rounded-lg bg-[var(--bg)]/90 text-[#37352f] shadow-sm backdrop-blur-sm md:hidden">
-      <span className="flex flex-col items-start gap-[5px]" aria-hidden="true">
-        <span className="block h-[2px] w-[19px] rounded-full bg-current" />
-        <span className="block h-[2px] w-[13px] rounded-full bg-current" />
-      </span>
-    </button>
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-14 items-center justify-between px-3 md:px-5">
+      <button type="button" onClick={openMobileSidebar} aria-label="Open sidebar" title="Open sidebar" className="pointer-events-auto grid h-9 w-9 place-items-center rounded-lg border-0 bg-transparent p-0 text-[#37352f] shadow-none md:hidden">
+        <span className="flex flex-col items-start gap-[5px]" aria-hidden="true">
+          <span className="block h-[2px] w-[19px] rounded-full bg-current" />
+          <span className="block h-[2px] w-[13px] rounded-full bg-current" />
+        </span>
+      </button>
+      <button type="button" onClick={fresh} aria-label="New chat" title="New chat" className="pointer-events-auto grid h-9 w-9 place-items-center rounded-lg border-0 bg-transparent p-0 text-[#37352f] shadow-none transition hover:bg-black/5 md:hidden">
+        <SquarePen size={19} strokeWidth={2} />
+      </button>
+    </div>
     <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end">
@@ -104,7 +109,7 @@ export default function Home(){
           {loading?<Progress status={status} steps={steps}/>:null}
         </div>
       </div>
-      <div className={`mx-auto w-full max-w-[900px] px-4 ${isNew?"pb-[20vh] md:pb-[16vh]":"pb-6"} md:px-8`}>
+      <div className={`mx-auto w-full max-w-[900px] px-4 ${isNew?"pb-[22vh] -translate-y-2 md:pb-[18vh]":"pb-6"} md:px-8`}>
         {isNew?<div className="mb-4 flex items-center justify-center gap-3 px-1"><img src={BRAND_LOGO} alt="Sanmine Space" className="h-10 w-10 shrink-0 rounded-xl object-cover"/><div className="font-serif text-[34px] font-medium leading-none tracking-[-.045em] text-[#282721]">Let's noodle</div></div>:null}
         <Composer value={text} setValue={setText} onSubmit={submit} onStop={stop} loading={loading}/>
         {isNew?<div className="mt-3 grid grid-cols-2 gap-2">{templateMessages.map(t=><button key={t} type="button" onClick={()=>setText(t)} className="min-w-0 rounded-xl border border-[#e2dfd8] bg-white px-3 py-2.5 text-left text-[13px] leading-5 text-[#5f5b53]">{t}</button>)}</div>:null}
