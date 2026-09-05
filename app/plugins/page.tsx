@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import { CalendarDays, FileText, Flame, FolderOpen, Github, LayoutGrid, Menu, MessageCircle, Palette, Rss, Search, Settings, Table2, Triangle, Youtube } from "lucide-react";
+import { CalendarDays, Code2, FileText, Flame, FolderOpen, LayoutGrid, Menu, MessageCircle, Palette, Rss, Search, Settings, Table2, Triangle, Video } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { EmailConnections } from "@/components/email-connections";
@@ -10,8 +10,8 @@ import { EmailConnections } from "@/components/email-connections";
 type Plugin={id:string;name:string;description:string;category:string;icon:ReactNode;status:"Ready"|"Setup required";billing:"No card"|"Free quota"|"OAuth";env:string[]};
 const plugins:Plugin[]=[
 {id:"web",name:"Web Search",description:"Search the web for research and source-backed answers.",category:"Research",icon:<Search size={20}/>,status:"Ready",billing:"Free quota",env:["TAVILY_API_KEY"]},
-{id:"github",name:"GitHub",description:"Connect repositories, issues, pull requests and code.",category:"Developer",icon:<Github size={20}/>,status:"Setup required",billing:"OAuth",env:["GITHUB_CLIENT_ID","GITHUB_CLIENT_SECRET","GITHUB_REDIRECT_URI"]},
-{id:"youtube",name:"YouTube",description:"Search channels and videos for creator research.",category:"Research",icon:<Youtube size={20}/>,status:"Ready",billing:"Free quota",env:["YOUTUBE_API_KEY"]},
+{id:"github",name:"GitHub",description:"Connect repositories, issues, pull requests and code.",category:"Developer",icon:<Code2 size={20}/>,status:"Setup required",billing:"OAuth",env:["GITHUB_CLIENT_ID","GITHUB_CLIENT_SECRET","GITHUB_REDIRECT_URI"]},
+{id:"youtube",name:"YouTube",description:"Search channels and videos for creator research.",category:"Research",icon:<Video size={20}/>,status:"Ready",billing:"Free quota",env:["YOUTUBE_API_KEY"]},
 {id:"drive",name:"Google Drive",description:"Work with files the user explicitly authorizes.",category:"Workspace",icon:<FolderOpen size={20}/>,status:"Setup required",billing:"OAuth",env:["GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET","GOOGLE_DRIVE_REDIRECT_URI"]},
 {id:"docs",name:"Google Docs",description:"Read and create documents through Google OAuth.",category:"Workspace",icon:<FileText size={20}/>,status:"Setup required",billing:"OAuth",env:["GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET","GOOGLE_DOCS_REDIRECT_URI"]},
 {id:"sheets",name:"Google Sheets",description:"Read and update spreadsheets for structured data.",category:"Workspace",icon:<Table2 size={20}/>,status:"Setup required",billing:"OAuth",env:["GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET","GOOGLE_SHEETS_REDIRECT_URI"]},
