@@ -26,7 +26,9 @@ export default function ChatPage() {
         const data = await response.json();
         const chat = Array.isArray(data.chats) ? data.chats.find((item: { id?: string }) => item.id === id) : null;
         if (!chat?.title || cancelled) return;
-        const slug = slugify(String(chat.title));
+        const title = String(chat.title).trim();
+        document.title = `${title} - Sanmine`;
+        const slug = slugify(title);
         if (window.location.pathname !== `/chat/${slug}`) window.history.replaceState(window.history.state, "", `/chat/${slug}`);
       } catch {}
     })();
