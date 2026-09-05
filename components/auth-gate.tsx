@@ -21,7 +21,7 @@ export function AuthGate({children}:{children:React.ReactNode}){
  if(loading)return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted)]">Loading Sanmine Space…</div>;
  if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
  if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
- return <AuthUserContext.Provider value={user}><div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden bg-[var(--bg)] text-[var(--text)]"><WorkspaceSidebar user={user}/><div className="min-w-0 min-h-0 flex-1 overflow-y-auto [&>main>aside]:hidden">{children}</div></div></AuthUserContext.Provider>;
+ return <AuthUserContext.Provider value={user}><div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden bg-[var(--bg)] text-[var(--text)]"><WorkspaceSidebar user={user} global/><div className="min-w-0 min-h-0 flex-1 overflow-y-auto [&>main>aside]:hidden">{children}</div></div></AuthUserContext.Provider>;
 }
 
 type LoginProps={error:string;busy:boolean;setBusy:(v:boolean)=>void;setError:(v:string)=>void;pathname:string};
