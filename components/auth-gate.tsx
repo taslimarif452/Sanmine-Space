@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { usePathname } from "next/navigation";
 import { getFirebaseAuth, signInWithGoogle } from "@/lib/auth/firebase-client";
@@ -14,26 +14,52 @@ const AuthUserContext=createContext<User|null>(null);
 export function useAuthUser(){return useContext(AuthUserContext)}
 const PUBLIC_PATHS=new Set(["/","/privacy","/terms","/about","/contact"]);
 
-function AuthLoadingSkeleton(){return <DelayedSkeleton><div className="flex min-h-screen animate-pulse bg-[var(--bg)]"><div className="hidden w-[270px] shrink-0 border-r border-[var(--line)] bg-[var(--panel)] p-5 md:block"><div className="h-8 w-36 rounded-lg bg-[#e9e7e1]"/><div className="mt-9 space-y-3"><div className="h-10 rounded-lg bg-[#e9e7e1]"/><div className="h-10 rounded-lg bg-[#e9e7e1]"/><div className="h-10 rounded-lg bg-[#e9e7e1]"/></div></div><div className="flex min-w-0 flex-1 flex-col"><div className="h-14 border-b border-[var(--line)]"/><div className="flex flex-1 items-center justify-center px-5"><div className="w-full max-w-[760px] space-y-5"><div className="mx-auto h-12 w-12 rounded-2xl bg-[#e9e7e1]"/><div className="mx-auto h-10 w-64 rounded-xl bg-[#e9e7e1]"/><div className="mx-auto h-4 w-full max-w-lg rounded bg-[#e9e7e1]"/><div className="mt-8 h-20 rounded-[22px] bg-[#e9e7e1]"/></div></div></div></div></div></DelayedSkeleton>}
+function AuthLoadingSkeleton(){
+  return (
+    <DelayedSkeleton>
+      <div className="flex min-h-screen animate-pulse bg-[var(--bg)]">
+        <div className="hidden w-[270px] shrink-0 border-r border-[var(--line)] bg-[var(--panel)] p-5 md:block">
+          <div className="h-8 w-36 rounded-lg bg-[#e9e7e1]" />
+          <div className="mt-9 space-y-3">
+            <div className="h-10 rounded-lg bg-[#e9e7e1]" />
+            <div className="h-10 rounded-lg bg-[#e9e7e1]" />
+            <div className="h-10 rounded-lg bg-[#e9e7e1]" />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="h-14 border-b border-[var(--line)]" />
+          <div className="flex flex-1 items-center justify-center px-5">
+            <div className="w-full max-w-[760px] space-y-5">
+              <div className="mx-auto h-12 w-12 rounded-2xl bg-[#e9e7e1]" />
+              <div className="mx-auto h-10 w-64 rounded-xl bg-[#e9e7e1]" />
+              <div className="mx-auto h-4 w-full max-w-lg rounded bg-[#e9e7e1]" />
+              <div className="mt-8 h-20 rounded-[22px] bg-[#e9e7e1]" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </DelayedSkeleton>
+  );
+}
 
-export function AuthGate({children}:{children:React.ReactNode}){
- const pathname=usePathname();
- const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
- useEffect(()=>{let unsubscribe=()=>{};try{unsubscribe=onAuthStateChanged(getFirebaseAuth(),async next=>{setUser(next);setLoading(false);if(next){try{const token=await next.getIdToken();await fetch("/api/users/sync",{method:"POST",headers:{Authorization:`Bearer ${token}`}})}catch(e){console.error("User sync failed",e)}}})}catch(e){console.error(e);setError(e instanceof Error?e.message:"Firebase configuration is missing.");setLoading(false)}return()=>unsubscribe()},[]);
- useEffect(()=>{if(!user)return;const originalFetch=window.fetch.bind(window);const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==="string"?input:input instanceof URL?input.toString():input.url;if(!url.startsWith("/api/"))return originalFetch(input,init);const token=await user.getIdToken();const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));headers.set("Authorization",`Bearer ${token}`);return originalFetch(input,{...init,headers})};window.fetch=wrapped as typeof window.fetch;return()=>{window.fetch=originalFetch}},[user]);
- if(loading)return <AuthLoadingSkeleton/>;
- if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
- if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
- return <AuthUserContext.Provider value={user}><div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden bg-[var(--bg)] text-[var(--text)]"><WorkspaceSidebar user={user} global/><div className="min-w-0 min-h-0 flex-1 overflow-y-auto [&>main>aside]:hidden">{children}</div></div></AuthUserContext.Provider>;
+export function AuthGate({children}:{children:ReactNode}){
+  const pathname=usePathname();
+  const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
+  useEffect(()=>{let unsubscribe=()=>{};try{unsubscribe=onAuthStateChanged(getFirebaseAuth(),async next=>{setUser(next);setLoading(false);if(next){try{const token=await next.getIdToken();await fetch("/api/users/sync",{method:"POST",headers:{Authorization:`Bearer ${token}`}})}catch(e){console.error("User sync failed",e)}}})}catch(e){console.error(e);setError(e instanceof Error?e.message:"Firebase configuration is missing.");setLoading(false)}return()=>unsubscribe()},[]);
+  useEffect(()=>{if(!user)return;const originalFetch=window.fetch.bind(window);const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==="string"?input:input instanceof URL?input.toString():input.url;if(!url.startsWith("/api/"))return originalFetch(input,init);const token=await user.getIdToken();const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));headers.set("Authorization",`Bearer ${token}`);return originalFetch(input,{...init,headers})};window.fetch=wrapped as typeof window.fetch;return()=>{window.fetch=originalFetch}},[user]);
+  if(loading)return <AuthLoadingSkeleton/>;
+  if(!user&&PUBLIC_PATHS.has(pathname))return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname={pathname}/>;
+  if(!user)return <LandingLogin error={error} busy={busy} setBusy={setBusy} setError={setError} pathname="/"/>;
+  return <AuthUserContext.Provider value={user}><div className="sanmine-workspace-shell flex h-screen min-h-0 overflow-hidden bg-[var(--bg)] text-[var(--text)]"><WorkspaceSidebar user={user} global/><div className="min-w-0 min-h-0 flex-1 overflow-y-auto [&>main>aside]:hidden">{children}</div></div></AuthUserContext.Provider>;
 }
 
 type LoginProps={error:string;busy:boolean;setBusy:(v:boolean)=>void;setError:(v:string)=>void;pathname:string};
 function LandingLogin({error,busy,setBusy,setError,pathname}:LoginProps){
- const login=async()=>{setBusy(true);setError("");try{await signInWithGoogle()}catch(e){setError(e instanceof Error?e.message:"Google sign-in failed.")}finally{setBusy(false)}};
- const logo="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
- if(pathname==="/")return <><PremiumLanding onLogin={login} busy={busy} error={error}/><PricingPortal/><CookieConsent/></>;
- const titles:{[key:string]:string}={"/privacy":"Privacy Policy","/terms":"Terms & Conditions","/about":"About Sanmine Space","/contact":"Contact"};
- return <main className="min-h-screen bg-[var(--bg)] text-[var(--text)]"><header className="mx-auto flex max-w-6xl items-center justify-between border-b border-[#e5e1d9] px-5 py-5 md:px-8"><a href="/" className="flex items-center gap-2.5"><img src={logo} alt="Sanmine Space" className="h-8 w-8 rounded-lg"/><span className="font-serif text-xl tracking-[-.035em]">Sanmine Space</span></a><a href="/" className="rounded-xl border border-[#d8d5cd] bg-white px-4 py-2 text-sm font-medium shadow-sm">Home</a></header><article className="mx-auto max-w-3xl px-5 py-16 md:px-8 md:py-24"><p className="text-[11px] font-semibold uppercase tracking-[.2em] text-[var(--muted)]">Sanmine Space</p><h1 className="mt-4 font-serif text-5xl tracking-[-.045em]">{titles[pathname]||"Sanmine Space"}</h1>{pathname==="/privacy"?<Privacy/>:pathname==="/terms"?<Terms/>:pathname==="/about"?<About/>:<Contact/>}</article></main>;
+  const login=async()=>{setBusy(true);setError("");try{await signInWithGoogle()}catch(e){setError(e instanceof Error?e.message:"Google sign-in failed.")}finally{setBusy(false)}};
+  const logo="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
+  if(pathname==="/")return <><PremiumLanding onLogin={login} busy={busy} error={error}/><PricingPortal/><CookieConsent/></>;
+  const titles:{[key:string]:string}={"/privacy":"Privacy Policy","/terms":"Terms & Conditions","/about":"About Sanmine Space","/contact":"Contact"};
+  return <main className="min-h-screen bg-[var(--bg)] text-[var(--text)]"><header className="mx-auto flex max-w-6xl items-center justify-between border-b border-[#e5e1d9] px-5 py-5 md:px-8"><a href="/" className="flex items-center gap-2.5"><img src={logo} alt="Sanmine Space" className="h-8 w-8 rounded-lg"/><span className="font-serif text-xl tracking-[-.035em]">Sanmine Space</span></a><a href="/" className="rounded-xl border border-[#d8d5cd] bg-white px-4 py-2 text-sm font-medium shadow-sm">Home</a></header><article className="mx-auto max-w-3xl px-5 py-16 md:px-8 md:py-24"><p className="text-[11px] font-semibold uppercase tracking-[.2em] text-[var(--muted)]">Sanmine Space</p><h1 className="mt-4 font-serif text-5xl tracking-[-.045em]">{titles[pathname]||"Sanmine Space"}</h1>{pathname==="/privacy"?<Privacy/>:pathname==="/terms"?<Terms/>:pathname==="/about"?<About/>:<Contact/>}</article></main>;
 }
 function Privacy(){return <div className="mt-10 space-y-8 text-[15px] leading-7 text-[#4f4c45]"><p>Sanmine Space is an AI workspace for research, lead discovery, analysis, proposals and outreach.</p><section><h2 className="font-semibold text-[var(--text)]">Information we collect</h2><p className="mt-2">We may receive your name, email address, profile image and provider identifier when you sign in. We may store prompts, conversations, generated responses, research results, leads, proposal or email drafts, timestamps and workspace metadata.</p></section><section><h2 className="font-semibold text-[var(--text)]">AI and research processing</h2><p className="mt-2">Prompts and relevant content may be processed by configured AI providers to generate requested responses. When you request web research, public pages may be retrieved and summarized.</p></section><section><h2 className="font-semibold text-[var(--text)]">Storage and security</h2><p className="mt-2">We use service providers for authentication, storage, AI processing, research and email features when needed to deliver the service. We do not sell personal information.</p></section><p>Questions or privacy requests: support.sanminespace@gmail.com.</p></div>}
 function Terms(){return <div className="mt-10 space-y-8 text-[15px] leading-7 text-[#4f4c45]"><section><h2 className="font-semibold text-[var(--text)]">Using Sanmine Space</h2><p className="mt-2">Use the service lawfully, protect your account, and do not interfere with the service or attempt unauthorized access.</p></section><section><h2 className="font-semibold text-[var(--text)]">AI-generated work</h2><p className="mt-2">AI outputs can contain errors and should be reviewed before you rely on them. Check research, claims, contact details, proposals and outreach before use.</p></section><section><h2 className="font-semibold text-[var(--text)]">Email and connected accounts</h2><p className="mt-2">When you connect an email account, you authorize Sanmine Space to perform the actions covered by the permissions you approve. Use sending features responsibly and comply with applicable laws.</p></section><p>Questions: support.sanminespace@gmail.com.</p></div>}
