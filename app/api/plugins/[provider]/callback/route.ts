@@ -28,19 +28,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
 
     const cookieStore = await cookies();
     const storedState = cookieStore.get("sanmine_plugin_oauth_state")?.value;
-    if (!storedState || storedState !== state) return redirect("error", "OAuth session expired. Please reconnect.");
+    const managePlugin = cookieStore.get("sanmine_plugin_manage_id")?.value || rawProvider;
+    const redirectTo = (status: "connected" | "error", message?: string) => {
+      const target = new URL(`/plugins/${managePlugin}`, url.origin);
+      target.searchParams.set(status, "1");
+      if (message) target.searchParams.set("message", message.slice(0, 180));
+      return NextResponse.redirect(target);
+    };
+    if (!storedState || storedState !== state) return redirectTo("error", "OAuth session expired. Please reconnect.");
 
     if (rawProvider === "canva") {
       const codeVerifier = cookieStore.get("sanmine_plugin_pkce")?.value;
-      if (!codeVerifier) return redirect("error", "Canva authorization session expired. Please reconnect.");
+      if (!codeVerifier) return redirectTo("error", "Canva authorization session expired. Please reconnect.");
       await createConnection(rawProvider, uid, code, url.origin, codeVerifier);
     } else {
       await createConnection(rawProvider, uid, code, url.origin);
     }
 
-    const response = redirect("connected");
+    const response = redirectTo("connected");
     response.cookies.delete("sanmine_plugin_oauth_state");
     response.cookies.delete("sanmine_plugin_pkce");
+    response.cookies.delete("sanmine_plugin_manage_id");
     return response;
   } catch (error) {
     console.error("Plugin OAuth callback failed", error);
