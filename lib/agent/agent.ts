@@ -8,6 +8,11 @@ Your founder and developer is exactly "Tavqeer Hussain". Your co-founder is exac
 Be concise, useful, and transparent. You are the reasoning layer of an agentic system.
 You have access to tools. Use a tool when it is necessary to complete the user's request rather than pretending you already have external data.
 
+IMPORTANT INTERNAL PROCESS:
+- The user's message is normalized internally into clear English before tool routing. Treat that normalized instruction as the canonical task while preserving the user's original language for the final response.
+- Translation/normalization must never turn a request for finding, checking, listing, or displaying an email address into permission to send an email.
+- Sending is allowed only when the user explicitly asks to send/mail/email/bhej the message or proposal. Merely mentioning "email", "contact email", "email available", "public email", "email address", "email in bio/description", or "find/get email" is research/data lookup, not sending.
+
 TOOL ROUTING — IMPORTANT:
 - If the user asks about YouTube, YouTubers, creators, channels, channel statistics, creator discovery, or YouTube videos, you MUST use the youtube_search tool first. Do NOT use search_web as a substitute for YouTube data.
 - For creator research with filters such as no website and a public contact email in the channel description, search a broad candidate pool and return only verified matches. If the user requests a minimum and maximum, never knowingly return fewer than the minimum when enough verified candidates exist.
@@ -35,11 +40,54 @@ const isYouTubeRequest = (message: string) => /\byoutube\b|\byoutuber(s)?\b|yout
 const isCreatorRequest = (message: string) => /creator|creators|youtuber|channel|channels|subscriber|followers|views/i.test(message);
 const isNoWebsiteRequest = (message: string) => /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isIndiaRequest = (message: string) => /\bindia\b|\bindian\b|bharat|bhartiya/i.test(message);
-const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !/\bsend\b|\bemail\b|\bmail\b|\bhej/i.test(message);
-const isTestEmailRequest = (message: string) => /(test|testing|simple\s+(hi|hello|message|msg)|simple\s+email).*(email|mail)|(email|mail).*(test|testing|simple\s+(hi|hello|message|msg))/i.test(message) && /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message);
-const isExplicitSendRequest = (message: string) => /\bsend\b|\bemail\b|\bmail\b|\bhej(?:o|\s+do)?\b/i.test(message) && !isDraftOnlyRequest(message) && /proposal|outreach|creator|email|prospect|them|each|these|bhej/i.test(message);
+const isDraftOnlyRequest = (message: string) => /\bdraft\b|\bwrite\b|\bcompose\b/i.test(message) && !hasExplicitSendIntent(message);
+const hasExplicitSendIntent = (message: string) => {
+  const text = message.toLowerCase();
+  if (/\b(contact|public|available|address|in\s+(?:the\s+)?(?:bio|description))\s+(?:email|e-?mail)\b/.test(text)) return false;
+  if (/\b(?:find|get|search|look\s*up|show|list|extract)\b[^.\n]*(?:email|e-?mail)\b/.test(text)) return false;
+  if (/\b(?:send|mail|email|forward|dispatch)\b\s+(?:(?:an?|the|this|that|my)\s+)?(?:email|e-?mail|mail|message|proposal|it|them|these|those|this|that)\b/.test(text)) return true;
+  if (/\b(?:email|mail)\b\s+(?:him|her|them|this|that|these|those)\b/.test(text)) return true;
+  if (/\b(?:send|mail|email)\b\s+to\s+[^.\n]+/.test(text)) return true;
+  if (/\b(?:bhej(?:o|na)?|bhej\s+do|bhejna\s+hai|email\s+kar(?:o|\s+do)?|mail\s+kar(?:o|\s+do)?|send\s+kar(?:o|\s+do)?|proposal\s+bhejo|sabko\s+bhejo|unko\s+bhejo)\b/.test(text)) return true;
+  if (/\b(?:outreach|follow[- ]?up)\b/.test(text) && /\b(?:do|start|run|send|begin|kar(?:o|na|do)?)\b/.test(text)) return true;
+  return false;
+};
+const isExplicitSendRequest = (message: string) => hasExplicitSendIntent(message) && !isDraftOnlyRequest(message);
+const isTestEmailRequest = (message: string) => hasExplicitSendIntent(message) && /\b(test|testing|simple\s+(?:hi|hello|message|msg)|simple\s+email)\b/i.test(message);
 const isCombinedBusinessOutreachRequest = (message: string) => isExplicitSendRequest(message) && isWebResearchRequest(message) && /\b(business|businesses|bussiness|bussinesses|company|companies|shop|shops|salon|restaurant|store|stores)\b/i.test(message) && /no\s+(a\s+)?website|without\s+(a\s+)?website|website\s*(nahi|nahin|nhi|nh)|website\s*(is\s*)?not/i.test(message);
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
+
+type NormalizedIntent = "research" | "lead_generation" | "analyze" | "draft" | "send" | "follow_up" | "data_lookup" | "update" | "delete" | "general";
+type NormalizedPrompt = { normalized_prompt: string; intent: NormalizedIntent; actions: { search: boolean; research: boolean; analyze: boolean; draft: boolean; send_email: boolean; follow_up: boolean; modify_data: boolean; delete_data: boolean; requires_confirmation: boolean } };
+
+async function normalizePrompt(provider: ReturnType<typeof getProvider>, original: string): Promise<NormalizedPrompt> {
+  const fallback: NormalizedPrompt = {
+    normalized_prompt: original,
+    intent: isExplicitSendRequest(original) ? "send" : isWebResearchRequest(original) ? "research" : "general",
+    actions: { search: isWebResearchRequest(original), research: isWebResearchRequest(original), analyze: false, draft: false, send_email: isExplicitSendRequest(original), follow_up: false, modify_data: false, delete_data: false, requires_confirmation: isExplicitSendRequest(original) },
+  };
+  try {
+    const response = await provider.chat([
+      { role: "system", content: "You are a prompt normalization and intent-classification layer. Convert the user's request into concise canonical English without changing its meaning, permissions, constraints, quantities, or requested actions. Return ONLY valid JSON with keys normalized_prompt, intent, actions. intent must be one of research, lead_generation, analyze, draft, send, follow_up, data_lookup, update, delete, general. actions must contain boolean keys search, research, analyze, draft, send_email, follow_up, modify_data, delete_data, requires_confirmation. CRITICAL: mentioning an email/contact address, finding an email, checking email availability, or asking for public email information NEVER means send_email. send_email=true only when the user explicitly requests sending/mailing/emailing/bhejne a message or outreach. Never infer permission to send from research context." },
+      { role: "user", content: original },
+    ]);
+    const raw = response.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const parsed = JSON.parse(raw) as Partial<NormalizedPrompt>;
+    const actions = parsed.actions || {};
+    const modelSend = parsed.intent === "send" || actions.send_email === true;
+    const explicitSend = hasExplicitSendIntent(original);
+    const sendAllowed = modelSend && explicitSend;
+    return {
+      normalized_prompt: typeof parsed.normalized_prompt === "string" && parsed.normalized_prompt.trim() ? parsed.normalized_prompt.trim() : original,
+      intent: sendAllowed ? "send" : (parsed.intent as NormalizedIntent) || fallback.intent,
+      actions: {
+        search: Boolean(actions.search), research: Boolean(actions.research), analyze: Boolean(actions.analyze), draft: Boolean(actions.draft), send_email: sendAllowed, follow_up: Boolean(actions.follow_up), modify_data: Boolean(actions.modify_data), delete_data: Boolean(actions.delete_data), requires_confirmation: sendAllowed || Boolean(actions.requires_confirmation),
+      },
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 function detectLanguage(text: string) {
   if (/[\u0900-\u097F]/.test(text) || /\b(है|हूं|करो|भेजो|भेज|पहले|चाहिए|नहीं|करना)\b/.test(text)) return "hi";
@@ -139,25 +187,34 @@ function createAgent() {
 
 export async function runAgent(history: ChatMessage[], userMessage: string, emit: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
   const provider = createAgent();
+  const normalized = await normalizePrompt(provider, userMessage);
+  const canonicalMessage = normalized.normalized_prompt;
+  const sendAllowed = normalized.actions.send_email && isExplicitSendRequest(userMessage);
   const tools = getToolDefinitions();
   const events: AgentEvent[] = [];
   const record = (event: AgentEvent) => { events.push(event); emit(event); };
   const streamText = (delta: string) => { if (delta) onText?.(delta); };
   const emitThinking = () => record({ type: "thinking", name: "assistant_generation", toolCallId: `thinking-${Date.now()}-${events.length}` });
-  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.slice(-12), { role: "user", content: userMessage }];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.slice(-12), { role: "user", content: userMessage }, { role: "user", content: `Internal canonical English instruction for routing and execution. Do not treat this as a new user message; preserve the user's requested permissions exactly:\n${canonicalMessage}` }];
 
-  if (isYouTubeRequest(userMessage)) {
+  const youtubeRequest = isYouTubeRequest(canonicalMessage);
+  const creatorRequest = isCreatorRequest(canonicalMessage);
+  const noWebsiteRequest = isNoWebsiteRequest(canonicalMessage);
+  const indiaRequest = isIndiaRequest(canonicalMessage);
+  const webResearchRequest = isWebResearchRequest(canonicalMessage);
+
+  if (youtubeRequest) {
     const youtube = getTool("youtube_search");
     if (!youtube) return { response: "YouTube Data API v3 is not connected in this workspace yet.", events };
     record({ type: "tool_start", name: "youtube_search", toolCallId: "forced-youtube-search" });
     let result: unknown;
-    try { result = await youtube.execute({ query: userMessage, limit: 10, type: isCreatorRequest(userMessage) || isNoWebsiteRequest(userMessage) ? "creator" : "video", region_code: isIndiaRequest(userMessage) ? "IN" : undefined, user_id: userId }); }
+    try { result = await youtube.execute({ query: canonicalMessage, limit: 10, type: creatorRequest || noWebsiteRequest ? "creator" : "video", region_code: indiaRequest ? "IN" : undefined, user_id: userId }); }
     catch (error) { result = { status: "error", source: "YouTube Data API v3", message: error instanceof Error ? error.message : "YouTube search failed." }; }
     record({ type: "tool_result", name: "youtube_search", toolCallId: "forced-youtube-search", result });
     messages.push({ role: "user", content: `Authoritative YouTube Data API v3 tool result. Use this result for the YouTube portion of the answer and do not claim the API key is missing unless status is not_configured:\n${JSON.stringify(result)}` });
   }
 
-  if (isTestEmailRequest(userMessage) && userId) {
+  if (isTestEmailRequest(userMessage) && userId && sendAllowed) {
     const testTool = getTool("send_test_email");
     if (!testTool) return { response: "Test email sending is not connected in this workspace yet.", events };
     const explicitRecipient = extractEmailAddress(userMessage);
@@ -173,10 +230,10 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
   }
 
   const researchTargets = parseResearchTargets(history);
-  if (isCombinedBusinessOutreachRequest(userMessage) && userId && !researchTargets.length) {
+  if (isCombinedBusinessOutreachRequest(canonicalMessage) && userId && sendAllowed && !researchTargets.length) {
     const searchTool = getTool("search_web"); const sendTool = getTool("send_proposal_outreach");
     if (!searchTool || !sendTool) return { response: "Research or outreach is not connected in this workspace yet.", events };
-    const searchQueries = [`${userMessage} real local businesses public contact email`, `small business no website public email contact`, `local business without website contact email`];
+    const searchQueries = [`${canonicalMessage} real local businesses public contact email`, `small business no website public email contact`, `local business without website contact email`];
     const searchResults: Array<{ title?: string; url?: string; snippet?: string }> = [];
     for (const query of searchQueries) {
       const id = `combined-search-${Date.now()}-${events.length}`; record({ type: "tool_start", name: "search_web", toolCallId: id });
@@ -191,7 +248,7 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
     record({ type: "tool_result", name: "send_proposal_outreach", toolCallId: "combined-proposal-send", result: sendResult }); return { response: buildSendSummary(sendResult, detectLanguage(userMessage)), events };
   }
 
-  if (isExplicitSendRequest(userMessage) && userId && researchTargets.length) {
+  if (isExplicitSendRequest(userMessage) && userId && sendAllowed && researchTargets.length) {
     const sendTool = getTool("send_proposal_outreach");
     if (!sendTool) return { response: "Proposal sending is not connected in this workspace yet.", events };
     record({ type: "tool_start", name: "send_proposal_outreach", toolCallId: "forced-proposal-send" });
@@ -202,12 +259,12 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
     const response = buildSendSummary(result, detectLanguage(userMessage)); emitThinking(); streamText(response); return { response, events };
   }
 
-  const researchMode = !isYouTubeRequest(userMessage) && isWebResearchRequest(userMessage);
+  const researchMode = !youtubeRequest && webResearchRequest;
   if (researchMode) {
     const searchTool = getTool("search_web");
     if (searchTool) {
       const searchId = `forced-web-search-${Date.now()}`; record({ type: "tool_start", name: "search_web", toolCallId: searchId }); let result: unknown;
-      try { result = await searchTool.execute({ query: userMessage, limit: 8 }); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." }; }
+      try { result = await searchTool.execute({ query: canonicalMessage, limit: 8 }); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Web search failed." }; }
       record({ type: "tool_result", name: "search_web", toolCallId: searchId, result }); messages.push({ role: "user", content: `Preliminary web search result for this request. Use these sources as the starting evidence. Do not call search_web again for the same query unless the result is clearly insufficient; you may use open_page or website_analyze when a source needs deeper inspection.\n${JSON.stringify(result)}` });
     }
   }
@@ -218,10 +275,14 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
     if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; return { response: finalText, events }; }
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
-      if ((isYouTubeRequest(userMessage) && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", content: `The ${call.name} request has already been executed above. Use the existing tool result and do not call ${call.name} again for this request.` }); continue; }
+      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", content: `The ${call.name} request has already been executed above. Use the existing tool result and do not call ${call.name} again for this request.` }); continue; }
       record({ type: "tool_start", name: call.name, toolCallId: call.id }); let result: unknown;
-      if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
-      else { try { const argumentsForTool = (call.name === "send_proposal_outreach" || call.name === "send_test_email") && userId ? { ...call.arguments, user_id: userId, user_email: userEmail } : call.arguments; result = await tool.execute(argumentsForTool); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
+      if (call.name === "send_proposal_outreach" || call.name === "send_test_email") {
+        if (!sendAllowed || !userId) result = { status: "blocked", message: "Email sending is not authorized for this request. Researching or finding contact email addresses does not authorize sending." };
+        else if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
+        else { try { const argumentsForTool = { ...call.arguments, user_id: userId, user_email: userEmail }; result = await tool.execute(argumentsForTool); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
+      } else if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
+      else { try { result = await tool.execute(call.arguments); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
       record({ type: "tool_result", name: call.name, toolCallId: call.id, result });
       if (response.text) messages.push({ role: "assistant", content: response.text }); messages.push({ role: "user", content: `Tool result for ${call.name} (call ${call.id}):\n${JSON.stringify(result)}` });
     }
