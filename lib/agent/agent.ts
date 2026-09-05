@@ -58,7 +58,8 @@ const isCombinedBusinessOutreachRequest = (message: string) => isExplicitSendReq
 const isWebResearchRequest = (message: string) => /\bresearch\b|\bcheck\b|\bsearch\b|\bfind\b|\blook\s*up\b|\bdetails?\b|\bavailable\b|\bavailability\b|\bdomain\b|\bwebsite\b|\bsite\b|\bgo\s*dad(?:d?y)?\b|\bextract\b|\bnikal(?:o|na|ke)?\b|\bdekho\b|\bdekh\s*kar\b|\bcurrent\b|\blatest\b/i.test(message);
 
 type NormalizedIntent = "research" | "lead_generation" | "analyze" | "draft" | "send" | "follow_up" | "data_lookup" | "update" | "delete" | "general";
-type NormalizedPrompt = { normalized_prompt: string; intent: NormalizedIntent; actions: { search: boolean; research: boolean; analyze: boolean; draft: boolean; send_email: boolean; follow_up: boolean; modify_data: boolean; delete_data: boolean; requires_confirmation: boolean } };
+type NormalizedActions = { search: boolean; research: boolean; analyze: boolean; draft: boolean; send_email: boolean; follow_up: boolean; modify_data: boolean; delete_data: boolean; requires_confirmation: boolean };
+type NormalizedPrompt = { normalized_prompt: string; intent: NormalizedIntent; actions: NormalizedActions };
 
 async function normalizePrompt(provider: ReturnType<typeof getProvider>, original: string): Promise<NormalizedPrompt> {
   const fallback: NormalizedPrompt = {
@@ -73,13 +74,15 @@ async function normalizePrompt(provider: ReturnType<typeof getProvider>, origina
     ]);
     const raw = response.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
     const parsed = JSON.parse(raw) as Partial<NormalizedPrompt>;
-    const actions = parsed.actions || {};
+    const actions: Partial<NormalizedActions> = parsed.actions ?? {};
     const modelSend = parsed.intent === "send" || actions.send_email === true;
     const explicitSend = hasExplicitSendIntent(original);
     const sendAllowed = modelSend && explicitSend;
+    const parsedIntent = parsed.intent;
+    const safeIntent: NormalizedIntent = parsedIntent === "research" || parsedIntent === "lead_generation" || parsedIntent === "analyze" || parsedIntent === "draft" || parsedIntent === "send" || parsedIntent === "follow_up" || parsedIntent === "data_lookup" || parsedIntent === "update" || parsedIntent === "delete" || parsedIntent === "general" ? parsedIntent : fallback.intent;
     return {
       normalized_prompt: typeof parsed.normalized_prompt === "string" && parsed.normalized_prompt.trim() ? parsed.normalized_prompt.trim() : original,
-      intent: sendAllowed ? "send" : (parsed.intent as NormalizedIntent) || fallback.intent,
+      intent: sendAllowed ? "send" : safeIntent,
       actions: {
         search: Boolean(actions.search), research: Boolean(actions.research), analyze: Boolean(actions.analyze), draft: Boolean(actions.draft), send_email: sendAllowed, follow_up: Boolean(actions.follow_up), modify_data: Boolean(actions.modify_data), delete_data: Boolean(actions.delete_data), requires_confirmation: sendAllowed || Boolean(actions.requires_confirmation),
       },
@@ -167,7 +170,7 @@ function buildSendSummary(result: any, language: string) {
     fr: { title: "## Prospection terminée", processed: "J’ai traité", prospects: "prospects recherchés", sent: "### Envoyés avec succès", none: "Aucun email n’a été envoyé", skipped: "### Ignorés", failed: "### Échecs", proof: "Un email est marqué comme envoyé uniquement après une réponse réussie de Gmail." },
     en: { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." },
   }[language as "hi" | "bn" | "es" | "fr" | "en"] || undefined;
-  const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after Gmail returns a successful send response." };
+  const l = labels || { title: "## Outreach completed", processed: "I processed", prospects: "researched prospects", sent: "### Sent successfully", none: "None", skipped: "### Skipped", failed: "### Failed", proof: "Each email is marked as sent only after a response." };
   const lines = [l.title, `${l.processed} **${processedCount}** ${l.prospects}${result?.sender ? ` (${result.sender})` : ""}.`, "", sentCount ? l.sent : `${l.sent}\n${l.none}`, ...(sent.length ? sent.map((item: any) => `- **${item.creator}** → ${item.email} — ${item.subject || "Website proposal"}`) : []), "", skipped.length ? l.skipped : "", ...(skipped.length ? skipped.map((item: any) => `- **${item.creator}** — ${item.reason}`) : []), "", failed.length ? l.failed : "", ...(failed.length ? failed.map((item: any) => `- **${item.creator}**${item.email ? ` → ${item.email}` : ""} — ${item.reason}`) : []), "", l.proof].filter(Boolean);
   return lines.join("\n");
 }
@@ -185,7 +188,7 @@ function createAgent() {
   return getProvider();
 }
 
-export async function runAgent(history: ChatMessage[], userMessage: string, emit: (event: AgentEvent) => void, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
+export async function runAgent(history: ChatMessage[], userMessage: string, emit: (event: AgentEvent) => void = () => {}, userId?: string, onText?: (delta: string) => void, userEmail?: string) {
   const provider = createAgent();
   const normalized = await normalizePrompt(provider, userMessage);
   const canonicalMessage = normalized.normalized_prompt;
@@ -275,17 +278,14 @@ export async function runAgent(history: ChatMessage[], userMessage: string, emit
     if (!response.toolCalls.length) { const finalText = response.text || "I’m ready. What would you like me to do?"; return { response: finalText, events }; }
     for (const call of response.toolCalls) {
       const tool = getTool(call.name);
-      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "user", content: `The ${call.name} request has already been executed above. Use the existing tool result and do not call ${call.name} again for this request.` }); continue; }
-      record({ type: "tool_start", name: call.name, toolCallId: call.id }); let result: unknown;
-      if (call.name === "send_proposal_outreach" || call.name === "send_test_email") {
-        if (!sendAllowed || !userId) result = { status: "blocked", message: "Email sending is not authorized for this request. Researching or finding contact email addresses does not authorize sending." };
-        else if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
-        else { try { const argumentsForTool = { ...call.arguments, user_id: userId, user_email: userEmail }; result = await tool.execute(argumentsForTool); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
-      } else if (!tool) result = { status: "error", message: `Unknown tool: ${call.name}` };
-      else { try { result = await tool.execute(call.arguments); } catch (error) { result = { status: "error", message: error instanceof Error ? error.message : "Tool execution failed." }; } }
+      if ((youtubeRequest && call.name === "youtube_search") || (researchMode && call.name === "search_web")) { messages.push({ role: "tool", name: call.name, content: "This tool call was already executed by the deterministic router. Use the authoritative result already in context." }); continue; }
+      if (!sendAllowed && (call.name === "send_test_email" || call.name === "send_proposal_outreach")) { messages.push({ role: "tool", name: call.name, content: "Blocked: the user did not explicitly authorize sending an email. Treat email/contact-address mentions as research or data lookup only." }); continue; }
+      if (!tool) { messages.push({ role: "tool", name: call.name, content: `Tool ${call.name} is unavailable.` }); continue; }
+      const result = await tool.execute(call.arguments);
+      record({ type: "tool_start", name: call.name, toolCallId: call.id });
       record({ type: "tool_result", name: call.name, toolCallId: call.id, result });
-      if (response.text) messages.push({ role: "assistant", content: response.text }); messages.push({ role: "user", content: `Tool result for ${call.name} (call ${call.id}):\n${JSON.stringify(result)}` });
+      messages.push({ role: "tool", name: call.name, content: JSON.stringify(result) });
     }
   }
-  const response = "I reached the tool-call limit for this request. Please try the task again."; streamText(response); return { response, events };
+  return { response: "I reached the tool execution limit before completing the request.", events };
 }
