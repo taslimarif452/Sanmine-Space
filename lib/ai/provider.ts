@@ -1,6 +1,6 @@
 import type { ToolCall, ToolDefinition } from "@/lib/agent/tools/types";
 
-export type ChatMessage = { role: "user" | "assistant" | "system" | "tool"; content: string; name?: string };
+export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 export type AIProviderName = "gemini" | "openrouter";
 export type ProviderResponse = { text: string; toolCalls: ToolCall[]; raw?: unknown };
 export interface AIProvider {
