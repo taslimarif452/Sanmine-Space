@@ -3,8 +3,8 @@ import type { AgentEvent, ToolResult } from "@/lib/agent/tools/types";
 
 export const MAX_AGENT_STEPS = 8;
 export const MAX_TOOL_CALLS = 10;
-export const TOOL_TIMEOUT_MS = 15_000;
-export const MODEL_TIMEOUT_MS = 35_000;
+export const TOOL_TIMEOUT_MS = 60_000;
+export const MODEL_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 1;
 
 export type SafeSource = { title: string; url: string; snippet?: string; domain: string };
