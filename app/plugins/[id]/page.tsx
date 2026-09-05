@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Link2, RefreshCw, Settings, Trash2, Unplug } from "lucide-react";
 import { useAuthUser } from "@/components/auth-gate";
 
@@ -25,9 +25,14 @@ const pluginCatalog = [
 const storageKey = (uid: string) => `sanmine:installed-plugins:${uid}`;
 type Connection = { id: string; provider: string; email: string; display_name?: string | null };
 
-export default function PluginManagePage({ params }: { params: { id: string } }) {
+type PluginManagePageProps = {
+  params: Promise<{ id: string }>;
+};
+
+export default function PluginManagePage({ params }: PluginManagePageProps) {
+  const { id } = use(params);
   const user = useAuthUser();
-  const plugin = useMemo(() => pluginCatalog.find((item) => item.id === params.id), [params.id]);
+  const plugin = useMemo(() => pluginCatalog.find((item) => item.id === id), [id]);
   const [installed, setInstalled] = useState(false);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,14 +42,14 @@ export default function PluginManagePage({ params }: { params: { id: string } })
     if (!user?.uid) return;
     try {
       const saved = JSON.parse(window.localStorage.getItem(storageKey(user.uid)) ?? "[]");
-      setInstalled(Array.isArray(saved) && saved.includes(params.id));
+      setInstalled(Array.isArray(saved) && saved.includes(id));
     } catch { setInstalled(false); }
-  }, [params.id, user?.uid]);
+  }, [id, user?.uid]);
 
   useEffect(() => {
-    if (!user || params.id !== "gmail") return;
+    if (!user || id !== "gmail") return;
     void loadGmailConnection();
-  }, [params.id, user]);
+  }, [id, user]);
 
   const loadGmailConnection = async () => {
     if (!user) return;
@@ -62,7 +67,7 @@ export default function PluginManagePage({ params }: { params: { id: string } })
   const uninstall = () => {
     try {
       const saved = JSON.parse(window.localStorage.getItem(storageKey(user.uid)) ?? "[]");
-      const next = Array.isArray(saved) ? saved.filter((id) => id !== plugin.id) : [];
+      const next = Array.isArray(saved) ? saved.filter((pluginId) => pluginId !== plugin.id) : [];
       window.localStorage.setItem(storageKey(user.uid), JSON.stringify(next));
     } catch { window.localStorage.setItem(storageKey(user.uid), "[]"); }
     setInstalled(false);
