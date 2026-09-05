@@ -57,7 +57,7 @@ export default function Home(){
   const send=async(q:string,base:Message[],chatId:string|null)=>{
     if(!user||!q.trim())return;
     setLoading(true);setStatus("Thinking");setSteps([]);setError("");followRef.current=true;requestAnimationFrame(()=>scrollLatest("smooth"));
-    const controller=new AbortController();abortRef.current=controller;let answer="",streamed="",displayed="",events:Event[]=[],id=chatId; let typeTimer:ReturnType<typeof setInterval>|null=null;
+    const controller=new AbortController();abortRef.current=controller;let answer="",streamed="",displayed="",events:Event[]=[],id=chatId;
     try{
       const token=await user.getIdToken();
       const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({message:q,history:base.map(m=>({role:m.role,content:m.content})),chatId}),signal:controller.signal});
@@ -66,27 +66,16 @@ export default function Home(){
       const consume=(line:string)=>{if(!line.trim())return;let d:StreamPacket;try{d=JSON.parse(line)}catch{return}
         if(d.type==="chat"&&d.chatId){id=d.chatId;setActive(id);window.history.replaceState(window.history.state,"",`/chat/${id}`);const now=new Date().toISOString();setChats(xs=>{const withoutPending=xs.filter(c=>!c.id.startsWith("pending-"));if(withoutPending.some(c=>c.id===id))return withoutPending;const n=[{id:id!,title:q.slice(0,120),created_at:now,updated_at:now},...withoutPending];write(rkey(user.uid),n);return n});}
         if(d.type==="event"&&d.event){const e=d.event;events.push(e);if(e.type==="thinking"){setStatus(e.name==="tool_test"?"Checking available tools":"Thinking");}if(e.type==="tool_start"){const [key,label]=statusFor(e.name);void key;setStatus(label);setSteps(s=>[...s,label].slice(-6));}if(e.type==="tool_result")setStatus("Thinking");}
-        if(d.type==="delta"&&d.delta){
-          streamed+=d.delta;
-          setStatus("Writing answer");
-          if(!typeTimer){
-            typeTimer=setInterval(()=>{
-              if(displayed.length>=streamed.length){clearInterval(typeTimer!);typeTimer=null;return;}
-              displayed=streamed.slice(0,displayed.length+1);
-              setMsgs([...base,{role:"user",content:q},{role:"assistant",content:displayed}]);
-            },18);
-          }
-        }
+        if(d.type==="delta"&&d.delta){streamed+=d.delta;displayed=streamed;setStatus("Writing answer");setMsgs([...base,{role:"user",content:q},{role:"assistant",content:displayed}]);}
         if(d.type==="done"){answer=d.response||streamed;events=d.events||events;}
         if(d.type==="error")throw new Error(d.error||"Chat failed.");
       };
       while(true){const x=await reader.read();if(x.done)break;buffer+=decoder.decode(x.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines)consume(line)}buffer+=decoder.decode();if(buffer.trim())consume(buffer);
-      while(displayed.length<streamed.length){await new Promise(r=>setTimeout(r,18));}
-      if(typeTimer){clearInterval(typeTimer);typeTimer=null;} displayed=streamed; if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
+      displayed=streamed;if(!answer)answer=streamed;if(!answer)throw new Error("The AI completed without a usable answer.");
       const src=collectSources(events);const metadata:Metadata={kind:"chat_response",durationMs:0,eventCount:events.length,toolCount:events.filter(e=>e.type==="tool_start").length,sources:src};
-      const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);await loadChats(true);
+      const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:answer,sources:src,metadata}];setMsgs(final);if(id)write(ckey(user.uid,id),final);void loadChats(true);
     }catch(e){if((e as Error)?.name==="AbortError"){setError("Generation stopped.");if(streamed){const final=[...base,{role:"user" as const,content:q},{role:"assistant" as const,content:streamed}];setMsgs(final);if(id)write(ckey(user.uid,id),final)}}else setError(e instanceof Error?e.message:"Something went wrong.")}
-    finally{if(typeTimer)clearInterval(typeTimer);abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
+    finally{abortRef.current=null;setLoading(false);setStatus("");setSteps([]);}
   };
 
   const submit=()=>{const q=text.trim();if(!q||loading||loadingChat||!user)return;const base=editingIndex===null?msgs:msgs.slice(0,editingIndex);const userMessage:Message={role:"user",content:q};const next=[...base,userMessage];setMsgs(next);setText("");setEditingIndex(null);if(!active){const now=new Date().toISOString();const pending:Chat={id:`pending-${Date.now()}`,title:q.slice(0,120),created_at:now,updated_at:now};setChats(xs=>{const n=[pending,...xs];write(rkey(user.uid),n);return n});}void send(q,base,active)};
