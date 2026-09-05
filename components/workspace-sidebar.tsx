@@ -9,12 +9,14 @@ import { EmailConnections } from "@/components/email-connections";
 
 const LOGO="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787531960/file_00000000eed481f795676cc974695840_nh7jee.png";
 type Chat={id:string;title:string;created_at?:string;updated_at?:string};
+type Props={user:User;global?:boolean};
 
-export function WorkspaceSidebar({user}:{user:User}){
+export function WorkspaceSidebar({user,global=false}:Props){
  const router=useRouter();const pathname=usePathname();
  const [chats,setChats]=useState<Chat[]>([]),[side,setSide]=useState(true),[mobileOpen,setMobileOpen]=useState(false),[profile,setProfile]=useState(false),[menu,setMenu]=useState<string|null>(null);
- useEffect(()=>{let alive=true;const load=async()=>{try{const token=await user.getIdToken();const r=await fetch("/api/chats",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});if(!r.ok)return;const d=await r.json();if(alive)setChats(Array.isArray(d.chats)?d.chats:[])}catch{}};void load();return()=>{alive=false}},[user]);
- useEffect(()=>{const open=()=>setMobileOpen(true);window.addEventListener("sanmine:open-sidebar",open);const onDocumentClick=(event:MouseEvent)=>{const target=event.target as HTMLElement|null;if(target?.closest('button[aria-label="Open sidebar"]'))setMobileOpen(true)};document.addEventListener("click",onDocumentClick);return()=>{window.removeEventListener("sanmine:open-sidebar",open);document.removeEventListener("click",onDocumentClick)}},[]);
+ useEffect(()=>{if(!global)return;let alive=true;const load=async()=>{try{const token=await user.getIdToken();const r=await fetch("/api/chats",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});if(!r.ok)return;const d=await r.json();if(alive)setChats(Array.isArray(d.chats)?d.chats:[])}catch{}};void load();return()=>{alive=false}},[user,global]);
+ useEffect(()=>{if(!global)return;const open=()=>setMobileOpen(true);window.addEventListener("sanmine:open-sidebar",open);const onDocumentClick=(event:MouseEvent)=>{const target=event.target as HTMLElement|null;if(target?.closest('button[aria-label="Open sidebar"]'))setMobileOpen(true)};document.addEventListener("click",onDocumentClick);return()=>{window.removeEventListener("sanmine:open-sidebar",open);document.removeEventListener("click",onDocumentClick)}},[global]);
+ if(!global)return null;
  const fresh=()=>{setMenu(null);setProfile(false);setMobileOpen(false);router.push("/",{scroll:false})};
  const openChat=(id:string)=>{if(id.startsWith("pending-"))return;setMenu(null);setMobileOpen(false);router.push(`/chat/${id}`,{scroll:false})};
  const remove=async(id:string)=>{if(!window.confirm("Delete this chat?"))return;try{const token=await user.getIdToken();const r=await fetch(`/api/chats/${id}/manage`,{method:"DELETE",headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error("Unable to delete chat.");setChats(xs=>xs.filter(c=>c.id!==id));if(pathname===`/chat/${id}`)fresh()}catch{}setMenu(null)};
