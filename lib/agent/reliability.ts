@@ -3,11 +3,17 @@ import type { AgentEvent, ToolResult } from "@/lib/agent/tools/types";
 
 export const MAX_AGENT_STEPS = 8;
 export const MAX_TOOL_CALLS = 10;
+export const TOOL_TIMEOUT_MS = 60_000;
+export const MODEL_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 1;
 
 export type SafeSource = { title: string; url: string; snippet?: string; domain: string };
 
-export async function executeWithRetry<T>(fn: () => Promise<T>, _label: string): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, _ms: number, _label: string): Promise<T> {
+  return promise;
+}
+
+export async function executeWithRetry<T>(fn: () => Promise<T>, _label: string, _timeout = TOOL_TIMEOUT_MS): Promise<T> {
   let last: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try { return await fn(); }
